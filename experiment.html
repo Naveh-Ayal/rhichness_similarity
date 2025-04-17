@@ -1,8 +1,20 @@
 <!DOCTYPE html>
 <html>
     <head>
+        <!-- Load jsPsych and plugins -->
         <script src='jspsych/dist/jspsych.js'></script>
-        <script src='jatos.js'></script>
+
+        <!-- ✅ Load WebGazer BEFORE any plugins that depend on it -->
+        <script src="jspsych/webgazer.js"></script>
+        <script src="jspsych/dist/extension-webgazer.js"></script>
+
+
+        <!-- ✅ Only now load the plugin that uses WebGazer -->
+        <script src='jspsych/dist/plugin-webgazer-init-camera.js'></script>
+        <script src='jspsych/dist/plugin-webgazer-calibrate.js'></script>
+        <script src='jspsych/dist/plugin-webgazer-validate.js'></script>
+
+        <!-- Other jsPsych plugins -->
         <script src='jspsych/dist/plugin-preload.js'></script>
         <script src='jspsych/dist/plugin-html-slider-response.js'></script>
         <script src='jspsych/dist/plugin-html-keyboard-response.js'></script>
@@ -11,46 +23,104 @@
         <script src='jspsych/dist/plugin-survey-text.js'></script>
         <script src='jspsych/dist/plugin-virtual-chinrest.js'></script>
         <script src='jspsych/dist/plugin-fullscreen.js'></script>
-        <script src='jspsych/dist/plugin-webgazer-init-camera.js'></script>
-        <script src='jspsych/dist/plugin-webgazer-calibrate.js'></script>
-        <script src='jspsych/dist/plugin-webgazer-validate.js'></script>
         <script src='jspsych/dist/plugin-survey-html-form.js'></script>
-        <script src ='jspsych/dist/plugin-instructions.js'></script>
-        <script src="jspsych/dist/plugin-image-keyboard-response.js"></script>
+        <script src='jspsych/dist/plugin-instructions.js'></script>
+        <script src='jspsych/dist/plugin-image-keyboard-response.js'></script>
+        <script src='jatos.js'></script>
 
-
-
-        <link href='jspsych/dist/jspsych.css' rel='stylesheet'>
-
-        <style> 
-            .sv_complete_btn {
-              font-size: 28px;
+        <style>
+            /* 1. Base page layout — fills screen, prevents scrollbars */
+            html, body {
+              margin: 0;
+              padding: 0;
+              height: 100%;
+              width: 100%;
+              font-family: Arial, sans-serif;
+              overflow: hidden;
             }
-            .sv-action__content {
-                width: 480px;  
-                height: 100px;  
-                display: flex;  
-                justify-content: center;  
-                align-items: center;  
+          
+            /* 2. Main jsPsych container — center content horizontally and vertically */
+            .jspsych-display-element {
+              display: flex !important;
+              justify-content: center;
+              align-items: center;
+              height: 100vh;
+              flex-direction: column;
+              text-align: center;
             }
-        </style>
+          
+            /* 3. Prevent jsPsych from narrowing content */
+            .jspsych-content {
+              max-width: 100% !important;
+              text-align: center;
+            }
+          
+            /* 4. Clean form inputs and dropdowns */
+            input[type="text"],
+            input[type="number"],
+            select {
+              border: 1px solid #ccc;
+              padding: 6px 8px;
+              font-size: 16px;
+              border-radius: 4px;
+              box-sizing: border-box;
+              background-color: white;
+              width: 250px;
+              text-align: center;
+            }
+          
+            /* 5. Keep spacing between form questions clean */
+            .jspsych-survey-html-form p {
+              margin-bottom: 12px;
+            }
+          
+            /* 6. Style all jsPsych buttons */
+            .jspsych-btn {
+              margin-top: 20px;
+              font-size: 18px;
+              padding: 10px 20px;
+            }
+          
+            /* 7. Center individual button responses (e.g., Continue) */
+            .jspsych-html-button-response-button {
+              margin: 10px auto;
+            }
+          
+            /* 8. Gaze red dot (for real-time debugging) */
+            #gaze-dot {
+              position: fixed;
+              width: 15px;
+              height: 15px;
+              background-color: red;
+              border-radius: 50%;
+              z-index: 9999;
+              pointer-events: none;
+              display: none;
+            }
+          
+          </style>
+          
+          
+          
     </head>
     <body>
+        <div id="gaze-dot" style="display: none;"></div>
     </body>
 
     <script>
         var jsPsych = initJsPsych({
+            extensions: [
+                {type: jsPsychExtensionWebgazer}
+            ],
             on_finish: () => jatos.endStudy(jsPsych.data.get().json())
         });
-       
-
-        
-
+ 
         ////////////////////////////////////////////////////////////////////////////////////
         // Instructions / pre-exp screens according to the order in the experiment        //
         ////////////////////////////////////////////////////////////////////////////////////
         
         var pixelsPerDegree = 50; // default, will be updated after chinrest
+        const imageHeight = 26 * pixelsPerDegree;
         
         // using a virtual chinrest to make the size (in VA) constant across participants //
         var virtual_chinrest = {
@@ -58,36 +128,104 @@
             blindspot_reps: 3,
             resize_units: "deg",
             pixels_per_unit: 50,
-            item_path: 'stimuli/credit_card.png'
+            item_path: 'stimuli/credit_card.png',
+            on_finish: function(data) {
+                const maxPPD = window.innerHeight / 26;
+
+                if (data.pixels_per_degree) {
+                    const wasClamped = data.pixels_per_degree > maxPPD;
+                    data.original_pixels_per_degree = data.pixels_per_degree;
+                    data.pixels_per_degree = Math.min(data.pixels_per_degree, maxPPD);
+                    data.was_clamped = wasClamped;
+                    data.baseline_zoom = detectZoomLevel();
+                    pixelsPerDegree = data.pixels_per_degree;
+                } else {
+                    data.original_pixels_per_degree = 50;
+                    data.pixels_per_degree = 50;
+                    data.was_clamped = false;
+                    data.baseline_zoom = detectZoomLevel();
+                    pixelsPerDegree = 50;
+                }
+            }
         };
-        
+
         var get_pixels_per_degree = {
             type: jsPsychHtmlKeyboardResponse,
             stimulus: "<p>Calibrating image size...</p>",
             choices: "NO_KEYS",
             trial_duration: 100,
             on_start: function() {
-                const chinrestData = jsPsych.data.get().filter({trial_type: 'virtual-chinrest'}).last(1).values()[0];
+                const chinrestData = jsPsych.data.get().filter({ trial_type: 'virtual-chinrest' }).last(1).values()[0];
                 if (chinrestData && chinrestData.pixels_per_degree) {
-                    pixelsPerDegree = chinrestData.pixels_per_degree;
-                    baselineZoom = detectZoomLevel();
-                    jsPsych.data.addProperties({
+                const proposedPPD = chinrestData.pixels_per_degree;
+                const maxPPD = window.innerHeight / 26;
+                pixelsPerDegree = Math.min(proposedPPD, maxPPD);
+
+                const wasClamped = proposedPPD > maxPPD;
+
+                jsPsych.data.addProperties({
                     pixels_per_degree: pixelsPerDegree,
-                    baseline_zoom: baselineZoom
-                    });
+                    original_pixels_per_degree: proposedPPD,
+                    was_clamped: wasClamped,
+                    baseline_zoom: detectZoomLevel()
+                });
                 } else {
-                    console.warn("⚠️ Could not find pixels_per_degree — fallback to default (50)");
-                    pixelsPerDegree = 50; // fallback
+                console.warn("⚠️ No chinrest data found. Using fallback.");
+                pixelsPerDegree = 50;
+                jsPsych.data.addProperties({
+                    pixels_per_degree: 50,
+                    was_clamped: false,
+                    original_pixels_per_degree: 50,
+                    baseline_zoom: detectZoomLevel()
+                });
                 }
-                }
+            }
         };
 
-
+        var distance_warning_screen = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: function() {
+                const chinrestData = jsPsych.data.get().filter({ trial_type: 'virtual-chinrest' }).last(1).values()[0];
+                if (chinrestData && chinrestData.was_clamped) {
+                return `
+                    <p style="font-size: 24px; color: red;">⚠️ You appear to be sitting too far from the screen.</p>
+                    <p style="font-size: 20px;">To ensure the image fits on screen, please move closer and recalibrate.</p>
+                    <p style="font-size: 20px;">Press <b>Recalibrate</b> to redo the calibration process.</p>
+                `;
+                } else {
+                return `<p style="font-size: 22px;">Calibration complete. Press Continue to proceed.</p>`;
+                }
+            },
+            choices: function() {
+                const chinrestData = jsPsych.data.get().filter({ trial_type: 'virtual-chinrest' }).last(1).values()[0];
+                return chinrestData && chinrestData.was_clamped ? ['Recalibrate'] : ['Continue'];
+            }
+        };
 
         // zoom detection function
         function detectZoomLevel() {
             return window.devicePixelRatio || 1;
         }
+
+        var distance_check_loop = {
+            timeline: [
+                virtual_chinrest,
+                {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: "<p>Calibrating image size...</p>",
+                    choices: "NO_KEYS",
+                    trial_duration: 100,
+                    }
+,
+                distance_warning_screen
+            ],
+            loop_function: function() {
+                const chinrestData = jsPsych.data.get().filter({ trial_type: 'virtual-chinrest' }).last(1).values()[0];
+                return chinrestData && chinrestData.was_clamped;
+            }
+            };
+
+
 
         var baselineZoom = 1.0;
 
@@ -102,7 +240,6 @@
             }
         };
 
-        
  
         
         // show consent form before the experiment starts
@@ -122,17 +259,12 @@
             choices: ['Consent']
         };
 
-        // Preload all stimuli and masks
-        var preload = {
+        // preload the masks
+        const preload_masks = {
             type: jsPsychPreload,
-            images: [
-                ...Array.from({length: 400}, (_, i) =>
-                    `stimuli/pictures/image_${String(i + 1).padStart(3, '0')}.jpg`
-                ),
-                ...Array.from({length: 30}, (_, i) =>
-                    `stimuli/masks/mask_${String(i + 1).padStart(2, '0')}.jpg`
-                )
-            ]
+            images: Array.from({length: 30}, (_, i) =>
+                `stimuli/masks/mask_${String(i + 1).padStart(2, '0')}.jpg`
+            )
         };
 
 
@@ -145,6 +277,7 @@
                 <p><label>Age: <input name="age" type="number" required></label></p>
                 <p><label>Gender:
                     <select name="gender" required>
+                        <option value="" disabled selected>Select gender</option>
                         <option value="Female">Female</option>
                         <option value="Male">Male</option>
                         <option value="Other">Other</option>
@@ -153,6 +286,7 @@
                 </label></p>
                 <p><label>Handedness:
                     <select name="handedness" required>
+                        <option value="" disabled selected>Select handedness</option>
                         <option value="Left">Left</option>
                         <option value="Right">Right</option>
                     </select>
@@ -162,6 +296,8 @@
         };
 
 
+
+        
         // Instructions and metadata collection
         var instructions = {
         type : jsPsychInstructions,
@@ -185,6 +321,155 @@
             '<p>Do not exit full screen mode until the end of the experiment</p>',
             fullscreen_mode: true
         };
+
+        //webgazer setgazer listener and begin
+        //do i need to name th webgazer.js file something before calling it?
+        //to save and restore training data from browswer between sessions use local forge.
+        var camera_instructions = {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p>In order to participate you must allow the experiment to use your camera.</p>
+          <p>You will be prompted to do this on the next screen.</p>
+          <p>If you do not wish to allow use of your camera, you cannot participate in this experiment.<p>
+          <p>It may take up to 30 seconds for the camera to initialize after you give permission.</p>
+        `,
+        choices: ['Got it'],
+        }
+
+        var init_camera = {
+            type: jsPsychWebgazerInitCamera
+        }
+
+        var calibration_instructions = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `
+            <p>Now you'll calibrate the eye tracking, so that the software can use the image of your eyes to predict where you are looking.</p>
+            <p>You'll see a series of dots appear on the screen. Look at each dot and click on it.</p>
+            `,
+            choices: ['Got it'],
+        }
+
+
+        // clibration documenting: https://www.jspsych.org/latest/plugins/webgazer-calibrate/
+        var calibration = {
+            type: jsPsychWebgazerCalibrate,
+            // numbers calibrated are percent of pixels from [left,top]
+            calibration_points: [
+            [25,25],[75,25],[50,50],[25,75],[75,75]
+            ],
+            repetitions_per_point: 2,
+            randomize_calibration_order: true
+        }
+
+        var validation_instructions = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `
+            <p>Now we'll measure the accuracy of the calibration.</p>
+            <p>Look at each dot as it appears on the screen.</p>
+            <p style="font-weight: bold;">You do not need to click on the dots this time.</p>
+            `,
+            choices: ['Got it'],
+            post_trial_gap: 1000
+        }
+
+        // validation documentation: https://www.jspsych.org/latest/plugins/webgazer-validate/
+        var validation = {
+            type: jsPsychWebgazerValidate,
+            validation_points: [
+            [25,25],[75,25],[50,50],[25,75],[75,75]
+            ],
+            roi_radius: 200,
+            time_to_saccade: 1000,
+            validation_duration: 2000,
+            data: {
+            task: 'validate'
+            }
+        }
+
+        var recalibrate_instructions = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `
+            <p>The accuracy of the calibration is a little lower than we'd like.</p>
+            <p>Let's try calibrating one more time.</p>
+            <p>On the next screen, look at the dots and click on them.<p>
+            `,
+            choices: ['OK'],
+        }
+
+        var recalibrate = {
+            timeline: [recalibrate_instructions, calibration, validation_instructions, validation],
+            conditional_function: function(){
+            var validation_data = jsPsych.data.get().filter({task: 'validate'}).values()[0];
+            return validation_data.percent_in_roi.some(function(x){
+                var minimum_percent_acceptable = 50;
+                return x < minimum_percent_acceptable;
+            });
+            },
+            data: {
+            phase: 'recalibration'
+            }
+        }
+
+        var calibration_done = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `
+            <p>Great, we're done with calibration!</p>
+            `,
+            choices: ['OK']
+        }
+
+        var begin = {
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: `<p>The next screen will show an image to demonstrate adding the webgazer extension to a trial.</p>
+            <p>Just look at the image while eye tracking data is collected. The trial will end automatically.</p>
+            <p>Press any key to start.</p>
+            `
+        }
+
+        var trial = {
+            type: jsPsychImageKeyboardResponse,
+            stimulus: 'stimuli/masks/mask_01.jpg',
+            choices: "NO_KEYS",
+            trial_duration: 2000,
+            extensions: [
+                {
+                    type: jsPsychExtensionWebgazer, 
+                    params: {targets: ['#jspsych-image-keyboard-response-stimulus']}
+                }
+            ],
+            on_start: function() {
+                const dot = document.getElementById('gaze-dot');
+                webgazer.setGazeListener(function(data) {
+                    if (!data || typeof data.x !== 'number' || typeof data.y !== 'number') {
+                        dot.style.display = 'none';
+                        return;
+                    }
+                    dot.style.left = `${data.x - 7.5}px`;
+                    dot.style.top = `${data.y - 7.5}px`;
+                    dot.style.display = 'block';
+                });
+            },
+            on_finish: function() {
+            webgazer.clearGazeListener();
+            const dot = document.getElementById('gaze-dot');
+            if (dot) {
+                dot.style.display = 'none';
+            }
+        }
+    };
+
+
+        var show_data = {
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: function() {
+            var trial_data = jsPsych.data.getLastTrialData().values();
+            var trial_json = JSON.stringify(trial_data, null, 2);
+            return `<p style="margin-bottom:0px;"><strong>Trial data:</strong></p>
+                <pre style="margin-top:0px;text-align:left;">${trial_json}</pre>`;
+            },
+            choices: "NO_KEYS"
+        };
+
 
         // more in depth instructions for the experiment
         var before_exp_screen = {
@@ -254,180 +539,217 @@
             timeline: [
                 // Fixation before image 1
                 {
-                    type: jsPsychHtmlKeyboardResponse,
-                    stimulus: function() {
-                        let size = 26 * pixelsPerDegree;
-                        return `
-                            <div style="
-                                height: ${size}px;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                font-size: ${size * 0.8}px;
-                            ">
-                                +
-                            </div>`;
-                    },
-                    choices: "NO_KEYS",
-                    trial_duration: 500
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: function() {
+                    let size = 26 * pixelsPerDegree;
+                    return `
+                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                        <div style="font-size: ${size * 0.8}px;">+</div>
+                    </div>`;
                 },
-
-                // Mask before image 1
-                {
-                    type: jsPsychImageKeyboardResponse,
-                    stimulus: function() {
-                        const idx = Math.floor(Math.random() * 30) + 1;
-                        return `stimuli/masks/mask_${String(idx).padStart(2, '0')}.jpg`;
-                    },
-                    stimulus_height: function() {
-                        return 26 * pixelsPerDegree;
-                    },
-                    choices: "NO_KEYS",
-                    trial_duration: 1000
+                choices: "NO_KEYS",
+                trial_duration: 500
                 },
 
                 // Image 1
                 {
-                    type: jsPsychImageKeyboardResponse,
-                    stimulus: jsPsych.timelineVariable('image1'),
-                    stimulus_height: function() {
-                        return 26 * pixelsPerDegree;
-                    },
-                    trial_duration: 200
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: function() {
+                    const img = jsPsych.timelineVariable('image1');
+                    return `
+                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                        <img src="${img}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
+                    </div>`;
+                },
+                choices: "NO_KEYS",
+                trial_duration: 1000
                 },
 
-                // Fixation before image 2
+                // Mask after image 1
                 {
-                    type: jsPsychHtmlKeyboardResponse,
-                    stimulus: function() {
-                        let size = 26 * pixelsPerDegree;
-                        return `
-                            <div style="
-                                height: ${size}px;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                font-size: ${size * 0.8}px;
-                            ">
-                                +
-                            </div>`;
-                    },
-                    choices: "NO_KEYS",
-                    trial_duration: 500
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: function() {
+                    const idx = Math.floor(Math.random() * 30) + 1;
+                    const maskPath = `stimuli/masks/mask_${String(idx).padStart(2, '0')}.jpg`;
+                    return `
+                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                        <img src="${maskPath}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
+                    </div>`;
+                },
+                choices: "NO_KEYS",
+                trial_duration: 250
                 },
 
-                // Mask before image 2
-                {
-                    type: jsPsychImageKeyboardResponse,
-                    stimulus: function() {
-                        const idx = Math.floor(Math.random() * 30) + 1;
-                        return `stimuli/masks/mask_${String(idx).padStart(2, '0')}.jpg`;
-                    },
-                    stimulus_height: function() {
-                        return 26 * pixelsPerDegree;
-                    },
-                    choices: "NO_KEYS",
-                    trial_duration: 200
+                 // Fixation before image 2
+                 {
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: function() {
+                    let size = 26 * pixelsPerDegree;
+                    return `
+                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                        <div style="font-size: ${size * 0.8}px;">+</div>
+                    </div>`;
                 },
-
+                choices: "NO_KEYS",
+                trial_duration: 500
+                },
+                
                 // Image 2
                 {
-                    type: jsPsychImageKeyboardResponse,
-                    stimulus: jsPsych.timelineVariable('image2'),
-                    stimulus_height: function() {
-                        return 26 * pixelsPerDegree;
-                    },
-                    trial_duration: 1000
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: function() {
+                    const img = jsPsych.timelineVariable('image2');
+                    return `
+                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                        <img src="${img}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh;display: block;" />
+                    </div>`;
+                },
+                choices: "NO_KEYS",
+                trial_duration: 1000
+                },
+
+                // Mask after Image 2
+                {
+                type: jsPsychImageKeyboardResponse, 
+                stimulus: jsPsych.timelineVariable('mask'),
+                choices: "NO_KEYS",
+                trial_duration: 500
                 },
 
                 // Similarity rating
                 {
-                    type: jsPsychSurveyMultiChoice,
-                    questions: [
-                        {
-                        prompt: "",  // Leave prompt empty, we’ll manually inject it above
-                        name: "similarity",
-                        options: ["1", "2", "3", "4", "5"],
-                        required: true,
-                        horizontal: true
-                        }
-                    ],
-                    on_load: function () {
-                        // Add prompt above the question manually
-                        const container = document.querySelector('.jspsych-content');
-                        const promptText = document.createElement('div');
-                        promptText.innerHTML = '<p style="font-size: 20px; text-align: center;">Rate the similarity of the two images:</p>';
-                        container.insertBefore(promptText, container.firstChild);
-
-                        // Style layout: center row, vertical stacking
-                        const question = document.querySelector('.jspsych-survey-multi-choice-question');
-                        question.style.display = 'flex';
-                        question.style.justifyContent = 'center';
-
-                        const options = document.querySelectorAll('.jspsych-survey-multi-choice-option');
-                        options.forEach(option => {
-                            option.style.display = 'flex';
-                            option.style.flexDirection = 'column';
-                            option.style.alignItems = 'center';
-
-                            const label = option.querySelector('label');
-                            const input = option.querySelector('input[type="radio"]');
-
-                            option.innerHTML = '';
-                            option.appendChild(label);
-                            option.appendChild(input);
-                        });
-                        var requiredMark = document.querySelector('.jspsych-survey-multi-choice-required');
-                            if (requiredMark) {
-                                requiredMark.style.display = 'none';
-                            }
+                type: jsPsychSurveyMultiChoice,
+                questions: [
+                    {
+                    prompt: "",
+                    name: "similarity",
+                    options: ["1", "2", "3", "4", "5"],
+                    required: true,
+                    horizontal: true
                     }
-            }
-        ]
-    };  // <-- this closes the sequential_trial
+                ],
+                on_load: function () {
+                    const container = document.querySelector('.jspsych-content');
+
+                    // Add top prompt
+                    const promptText = document.createElement('div');
+                    promptText.innerHTML = `
+                    <p style="font-size: 20px; text-align: center;">
+                        Please rate the similarity of the two images using the following scale:<br>
+                        1 = Not at all similar, 5 = Extremely similar.
+                    </p>`;
+                    container.insertBefore(promptText, container.firstChild);
+
+                    // Style the question block horizontally
+                    const questionWrapper = document.querySelector('.jspsych-survey-multi-choice-question');
+                    questionWrapper.style.display = 'flex';
+                    questionWrapper.style.justifyContent = 'center';
+                    questionWrapper.style.alignItems = 'center';
+                    questionWrapper.style.gap = '12px';
+                    questionWrapper.style.margin = '10px 0';
+
+                    // Create side labels
+                    const leftLabel = document.createElement('div');
+                    const rightLabel = document.createElement('div');
+                    leftLabel.innerText = "Not at all similar";
+                    rightLabel.innerText = "Extremely similar";
+                    [leftLabel, rightLabel].forEach(label => {
+                    label.style.fontSize = '14px';
+                    label.style.width = '120px';
+                    });
+
+                    // Insert side labels
+                    questionWrapper.prepend(leftLabel);
+                    questionWrapper.appendChild(rightLabel);
+
+                    // Style each option (number above button)
+                    const options = questionWrapper.querySelectorAll('.jspsych-survey-multi-choice-option');
+                    options.forEach(option => {
+                    const label = option.querySelector('label');
+                    const input = option.querySelector('input[type="radio"]');
+                    option.innerHTML = '';
+
+                    option.style.display = 'flex';
+                    option.style.flexDirection = 'column';
+                    option.style.alignItems = 'center';
+                    option.style.margin = '0 5px';
+
+                    label.style.marginBottom = '4px';
+                    option.appendChild(label);
+                    option.appendChild(input);
+                    });
+
+                    // Hide red asterisk if exists
+                    const requiredMark = document.querySelector('.jspsych-survey-multi-choice-required');
+                    if (requiredMark) {
+                    requiredMark.style.display = 'none';
+                    }
+                }
+                }
+
+            ],
+            timeline_variables: [], // fill in your image1/image2 combinations here
+            randomize_order: true
+            };
 
 
 
-        // ====== Generate ordered image pairs ======
+
+        // ====== Generate image pairs and set the pairs in a random order ======
         const ordered_pairs = [];
         for (let i = 1; i <= 400; i += 2) {
-        const image1 = `stimuli/pictures/image_${String(i).padStart(3, '0')}.jpg`;
-        const image2 = `stimuli/pictures/image_${String(i + 1).padStart(3, '0')}.jpg`;
-        ordered_pairs.push({ image1, image2 });
+            const image1 = `stimuli/pictures/image_${String(i).padStart(3, '0')}.jpg`;
+            const image2 = `stimuli/pictures/image_${String(i + 1).padStart(3, '0')}.jpg`;
+            ordered_pairs.push({ image1, image2 });
         }
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+        shuffle(ordered_pairs);
+
+
 
         // ====== Divide into 4 ordered blocks of 50 trials ======
         const blocks = [];
-        const trialsPerBlock = 50;
-
+        const trialsPerBlock = 1;
         for (let i = 0; i < 4; i++) {
-        const block_pairs = ordered_pairs.slice(i * trialsPerBlock, (i + 1) * trialsPerBlock);
+            const block_pairs = ordered_pairs.slice(i * trialsPerBlock, (i + 1) * trialsPerBlock);
+            const block_images = block_pairs.flatMap(pair => [pair.image1, pair.image2]);
 
-        const block = {
-            timeline: [
-            check_zoom_loop, // Zoom check before block
+            const preload_block_images = {
+                type: jsPsychPreload,
+                images: block_images
+            };
 
-            {
-                timeline: sequential_trial.timeline,
-                timeline_variables: block_pairs,
-                on_start: function() {
-                const zoomPercent = Math.round(detectZoomLevel() * 100);
-                jsPsych.data.addProperties({ [`zoom_at_block_${i + 1}_percent`]: zoomPercent });
-                }
-            },
+            const block = {
+                timeline: [
+                    preload_block_images,  // ✅ Load only images for this block
+                    check_zoom_loop,
+                    {
+                        timeline: sequential_trial.timeline,
+                        timeline_variables: block_pairs,
+                        on_start: function() {
+                            const zoomPercent = Math.round(detectZoomLevel() * 100);
+                            jsPsych.data.addProperties({ [`zoom_at_block_${i + 1}_percent`]: zoomPercent });
+                        }
+                    },
+                    ...(i < 3 ? [{
+                        type: jsPsychHtmlKeyboardResponse,
+                        stimulus: `<p style="font-size:24px;">Block ${i + 1} complete.<br>
+                                Please rest. The next block will begin in 1 minute.</p>`,
+                        choices: "NO_KEYS",
+                        trial_duration: 10000 // change back to 1 minute after testing
+                    }] : [])
+                ]
+            };
 
-            ...(i < 3 ? [{
-                type: jsPsychHtmlKeyboardResponse,
-                stimulus: `<p style="font-size:24px;">Block ${i + 1} complete.<br>
-                        Please rest. The next block will begin in 1 minute.</p>`,
-                choices: "NO_KEYS",
-                trial_duration: 60000  // 1 minute =  
-            }] : [])
-            ]
-        };
-
-        blocks.push(block);
+            blocks.push(block);
         }
+
+
 
         ////////////////////////
         // Experiment ending  // 
@@ -453,72 +775,38 @@
         // Functions     // 
         ///////////////////
         
-        // the function creates a timeline with a countdown to allow participants to prepare before
-        // the video segments. The argument 'prepare_space' indicates if the participants should press space
-        // to indicate noticing a change in the current phase in general, and in addition, the function 
-        // checks if space was already pressed and in this case hides the preparation image.
-        /*function getCountdownProc(prepare_space) {
-            var countdown_proc = {
-                timeline : [countdown_phase],
-                timeline_variables : 
-                [{lower_message: function () {
-                    // the lower part of the countdown screen depends on whether we ask the participants
-                    // to report seeing a change
-                    prepare_message = '<p style="font-size:30px">Please place your fingers on the space bar</p>' +
-                    '<img src="stimuli/space_key.png" alt="Press space when you notice an unexpected change">'
-                    // for the 1st phase, we check if the particopant already pressed space 
-                    already_pressed_space = false
-                    for (trial_ind in jsPsych.data.get().values()) {
-                        trial_data = jsPsych.data.get().values()[trial_ind]
-                        if(jsPsych.pluginAPI.compareKeys(trial_data.trial_type, "video-keyboard-response")){
-                            if(jsPsych.pluginAPI.compareKeys(trial_data.response, ' ')){
-                                already_pressed_space = true;
-                            }
-                        }
-                    }
-                    // don't show the preparation message if the participant already presses space or if
-                    // the phase does not require pressing space to indicate noticing a change
-                    if(prepare_space == false || already_pressed_space) {
-                        prepare_message = '<p></p>'
-                    }
-                    return prepare_message
-                }}]
-            }
-            return countdown_proc;
-        }*/
-
-
-        // a wrapper function for questions that require a scale, generates the relevant question
-        /*function getSliderRandStartQ(question, min_val, max_val) {
-            rand_start_point = Math.floor(min_val + Math.random() * max_val);
-            var slider_Q = {
-                timeline : [question],
-                timeline_variables : [{slider_start: rand_start_point}]
-            };
-
-            return slider_Q;
-        }*/
-
-
         var timeline_start = [
-            virtual_chinrest,
-            get_pixels_per_degree,
-            consent_form,
-            preload,
+            /*distance_check_loop, // virtual_chinrest + get_pixels_per_degree,
+            consent_form,*/
+            /*preload_masks,
             participant_info_questions,
             instructions,
             show_full_screen,
+            camera_instructions,*/
+            init_camera,
+            calibration_instructions,
+            calibration,
+            calibration_done,
+            validation_instructions, 
+            validation, 
+            recalibrate,
+            calibration_done,
+            begin, 
+            trial, 
+            //show_data,
             before_exp_screen,
             ...blocks, // 👈 all 8 blocks inserted here
             exit_full_screen,
             finish_exp
         ];
 
-
         jatos.onLoad(() => {
             console.log("Experiment is starting");
             jsPsych.run(timeline_start);
         });
+
+
+
 
     </script>
 
