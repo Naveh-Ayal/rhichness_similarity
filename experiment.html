@@ -26,6 +26,7 @@
         <script src='jspsych/dist/plugin-survey-html-form.js'></script>
         <script src='jspsych/dist/plugin-instructions.js'></script>
         <script src='jspsych/dist/plugin-image-keyboard-response.js'></script>
+        <script src="jspsych/dist/plugin-call-function.js"></script>
         <script src='jatos.js'></script>
 
         <style>
@@ -97,7 +98,12 @@
               pointer-events: none;
               display: none;
             }
-          
+
+
+            .jspsych-required-asterisk {
+                display: none;
+            }
+
           </style>
           
           
@@ -120,7 +126,9 @@
         ////////////////////////////////////////////////////////////////////////////////////
         
         var pixelsPerDegree = 50; // default, will be updated after chinrest
-        const imageHeight = 26 * pixelsPerDegree;
+        const imageHeight = 26 * pixelsPerDegree; // choosing the angle that determines the image size
+        let calibrationCountThisBlock = 0; // initiating counter for amount of calibrations in each block
+
         
         // using a virtual chinrest to make the size (in VA) constant across participants //
         var virtual_chinrest = {
@@ -215,8 +223,7 @@
                     stimulus: "<p>Calibrating image size...</p>",
                     choices: "NO_KEYS",
                     trial_duration: 100,
-                    }
-,
+                    },
                 distance_warning_screen
             ],
             loop_function: function() {
@@ -354,6 +361,9 @@
         var calibration = {
             type: jsPsychWebgazerCalibrate,
             // numbers calibrated are percent of pixels from [left,top]
+            on_start: function() {
+                calibrationCountThisBlock++;
+            },
             calibration_points: [
             [25,25],[75,25],[50,50],[25,75],[75,75]
             ],
@@ -396,20 +406,6 @@
             choices: ['OK'],
         }
 
-        var recalibrate = {
-            timeline: [recalibrate_instructions, calibration, validation_instructions, validation],
-            conditional_function: function(){
-            var validation_data = jsPsych.data.get().filter({task: 'validate'}).values()[0];
-            return validation_data.percent_in_roi.some(function(x){
-                var minimum_percent_acceptable = 50;
-                return x < minimum_percent_acceptable;
-            });
-            },
-            data: {
-            phase: 'recalibration'
-            }
-        }
-
         var calibration_done = {
             type: jsPsychHtmlButtonResponse,
             stimulus: `
@@ -418,6 +414,47 @@
             choices: ['OK']
         }
 
+        var validation_done = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `
+                <p>✅ Calibration complete!</p>
+                <p>Your eye tracking accuracy is sufficient.</p>
+                <p>Click the button below to continue to the experiment.</p>
+            `,
+            choices: ['Continue']
+        };
+
+        
+        var calibration_loop = {
+            timeline: [
+                // conditional recalibration instructions - only from the 2nd loop
+                {
+                    timeline: [recalibrate_instructions],
+                    conditional_function: function() {
+                        // Only show recalibrate_instructions if this is NOT the first calibration
+                        return calibrationCountThisBlock > 0;  
+                    }
+                },
+                calibration,                    // shows dot-click calibration
+                calibration_done,              // "We're done" screen
+                validation_instructions,       // tells them not to click
+                validation,                   // gaze-only validation
+            ],
+            loop_function: function() {
+                // ⛳ This function runs after each full cycle of the above timeline
+                const valData = jsPsych.data.get().filter({ task: 'validate' }).last(1).values()[0];
+                
+                // ✅ Repeat the loop if ANY point is under 50% accuracy
+                return valData && valData.percent_in_roi
+                    ? valData.percent_in_roi.some(p => p < 10)
+                    : true; // just in case data is missing
+            }
+        };
+
+
+
+
+
         var begin = {
             type: jsPsychHtmlKeyboardResponse,
             stimulus: `<p>The next screen will show an image to demonstrate adding the webgazer extension to a trial.</p>
@@ -425,6 +462,7 @@
             <p>Press any key to start.</p>
             `
         }
+        
 
         var trial = {
             type: jsPsychImageKeyboardResponse,
@@ -472,7 +510,7 @@
 
 
         // more in depth instructions for the experiment
-        var before_exp_screen = {
+        const before_exp_screen = {
         type: jsPsychHtmlButtonResponse,
         stimulus: `
             <p style="font-size:30px;">We are ready to start the experiment!</p>
@@ -484,13 +522,16 @@
         };
 
 
-        // countdown until the experiment starts (relies on the getCountdownProc function)
-        /*var countdown_phase = {
-            type:CountdownPlugin,
-            prompt: '<p style="font-size:30px">Prepare for the video, it will start immediately after the countdown below expires:</p>',
-            lower_message: jsPsych.timelineVariable('lower_message'),
-            seconds: 5            
-        }*/
+        const pre_calibration_message = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: `
+                <p style="font-size: 26px;">Before the next block begins, we need to recalibrate the eye tracker.</p>
+                <p style="font-size: 22px;">This helps ensure your gaze data is accurate.</p>
+                <p style="font-size: 22px;">Please follow the instructions on the next screens and look directly at the dots.</p>
+            `,
+            choices: ['Continue']
+        };
+
 
 
         //recheck zoom level before block
@@ -535,136 +576,337 @@
         };
 
 
+
+
+        //let lastFixationValid = false; // put this once, at the top of your script (outside the function)
+
+/*function getFixationValidationLoop(pixelsPerDegree, toleranceDegrees = 1) {
+  const radiusPx = pixelsPerDegree * toleranceDegrees;
+
+  return {
+    timeline: [
+      // Fixation cross
+      {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: function () {
+          let size = 26 * pixelsPerDegree;
+          return `
+            <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+              <div style="font-size: ${size * 0.8}px;">+</div>
+            </div>`;
+        },
+        choices: "NO_KEYS",
+        trial_duration: 500,
+        extensions: [{
+          type: jsPsychExtensionWebgazer,
+          params: { targets: ['body'] }
+        }],
+        on_start: function() {
+            if (webgazer && webgazer.resume) {
+                webgazer.resume();
+                console.log("🔄 WebGazer resumed");
+            }
+        },
+
+        on_finish: function(data) {
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
+          const gaze = webgazer.getCurrentPrediction();
+
+          let valid = false;
+
+          if (gaze && gaze.x != null && gaze.y != null) {
+            const dx = gaze.x - centerX;
+            const dy = gaze.y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            valid = distance <= radiusPx;
+            console.log("📏 Distance:", distance.toFixed(2), "Valid?", valid);
+          } else {
+            console.warn("⚠️ Gaze data not available");
+          }
+
+          data.fixation_valid = valid;
+          lastFixationValid = valid;
+        }
+      },
+
+      // Retry screen if fixation invalid
+      {
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <p style="font-size: 24px; color: red;">You were not fixated on the center.</p>
+          <p>Please look directly at the cross and try again.</p>
+        `,
+        choices: ['Try again'],
+        conditional_function: function() {
+          return lastFixationValid === false;
+        }
+      }
+    ],
+
+    loop_function: function() {
+      console.log("🧪 Loop check — was fixation valid?", lastFixationValid);
+      return lastFixationValid === false;
+    }
+  };
+}*/
+
+
+const smartFixationCore = {
+  type: jsPsychImageKeyboardResponse,
+  stimulus: 'stimuli/fixation_cross.png',
+  stimulus_height: imageHeight,
+  data: { trial_id: 'fixation' },
+  choices: "NO_KEYS",
+  trial_duration: null, // we manually end the trial
+  on_load: function() {
+    const buffer = [];
+    const radiusPx = pixelsPerDegree * 1; // or use a fixed large px value for debugging
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const startTime = performance.now();
+
+    const interval = setInterval(async () => {
+      const now = performance.now();
+      const gaze = await webgazer.getCurrentPrediction();
+
+      if (gaze && gaze.x != null && gaze.y != null) {
+        buffer.push({ x: gaze.x, y: gaze.y, t: now });
+
+        // Keep last 500ms of gaze
+        const recent = buffer.filter(pt => now - pt.t <= 500);
+
+        const inside = recent.filter(pt => {
+          const dx = pt.x - centerX;
+          const dy = pt.y - centerY;
+          return Math.sqrt(dx * dx + dy * dy) <= radiusPx;
+        });
+
+        const percent = (inside.length / recent.length) * 100;
+        console.log(`📊 Gaze buffer: ${percent.toFixed(1)}% in ROI`);
+
+        if (recent.length >= 6 && percent >= 50) {
+          clearInterval(interval);
+          jsPsych.finishTrial({ fixation_success: true });
+        }
+      }
+
+      // Timeout fallback
+      if (now - startTime > 10000) {
+        clearInterval(interval);
+        console.warn("⏱ Fixation failed: 10s timeout");
+        jsPsych.finishTrial(); // fixation_success will be set in on_finish
+      }
+    }, 50);
+  },
+
+  on_finish: function(data) {
+    // If fixation_success was not set (i.e. from timeout), set it to false
+    if (typeof data.fixation_success === 'undefined') {
+      data.fixation_success = false;
+    }
+  }
+};
+
+
+
+const smartFixationRetry = {
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: `
+    <p style="font-size: 24px;">Please center your gaze on the cross.</p>
+    <p id="countdown-text" style="font-size: 18px;">Returning in 10 seconds...</p>`,
+  choices: "NO_KEYS",
+  trial_duration: 10000,
+  on_load: function() {
+    let seconds = 10;
+    const txt = document.getElementById("countdown-text");
+    const interval = setInterval(() => {
+      seconds--;
+      if (txt) txt.innerText = `Returning in ${seconds} seconds...`;
+      if (seconds <= 0) clearInterval(interval);
+    }, 1000);
+  }
+};
+
+        
+function getSmartFixationTrial() {
+  return {
+    timeline: [
+      smartFixationCore,  // actual gaze buffer logic
+      {
+        timeline: [smartFixationRetry],
+        conditional_function: function() {
+          const last = jsPsych.data.get().filter({ trial_type: 'html-keyboard-response' }).last(1).values()[0];
+          console.log("🧪 Retry condition check — fixation_success:", last?.fixation_success);
+          return last && last.fixation_success === false;
+        }
+      }
+    ],
+    loop_function: function() {
+  const last = jsPsych.data.get().filter({ trial_id: 'fixation' }).last(1).values()[0];
+  console.log("🔁 Loop check — fixation_success:", last?.fixation_success);
+  return last && last.fixation_success === false;
+}
+
+
+  };
+}
+
+
+
+
+        
+
         var sequential_trial = {
             timeline: [
-                // Fixation before image 1
-                {
-                type: jsPsychHtmlKeyboardResponse,
-                stimulus: function() {
-                    let size = 26 * pixelsPerDegree;
-                    return `
-                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
-                        <div style="font-size: ${size * 0.8}px;">+</div>
-                    </div>`;
-                },
-                choices: "NO_KEYS",
-                trial_duration: 500
-                },
+                // 1. Smart fixation with gaze buffer logic
+                    getSmartFixationTrial(pixelsPerDegree, 40),
 
                 // Image 1
                 {
-                type: jsPsychHtmlKeyboardResponse,
-                stimulus: function() {
-                    const img = jsPsych.timelineVariable('image1');
-                    return `
-                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
-                        <img src="${img}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
-                    </div>`;
-                },
-                choices: "NO_KEYS",
-                trial_duration: 1000
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: function () {
+                        const img = jsPsych.timelineVariable('image1');
+                        return `
+                        <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                            <img src="${img}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
+                        </div>`;
+                    },
+                    choices: "NO_KEYS",
+                    trial_duration: 1000,
+                    extensions: [{
+                        type: jsPsychExtensionWebgazer,
+                        params: {
+                            targets: ['img']
+                        }
+                    }]
                 },
 
                 // Mask after image 1
                 {
-                type: jsPsychHtmlKeyboardResponse,
-                stimulus: function() {
-                    const idx = Math.floor(Math.random() * 30) + 1;
-                    const maskPath = `stimuli/masks/mask_${String(idx).padStart(2, '0')}.jpg`;
-                    return `
-                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
-                        <img src="${maskPath}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
-                    </div>`;
-                },
-                choices: "NO_KEYS",
-                trial_duration: 250
-                },
-
-                 // Fixation before image 2
-                 {
-                type: jsPsychHtmlKeyboardResponse,
-                stimulus: function() {
-                    let size = 26 * pixelsPerDegree;
-                    return `
-                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
-                        <div style="font-size: ${size * 0.8}px;">+</div>
-                    </div>`;
-                },
-                choices: "NO_KEYS",
-                trial_duration: 500
-                },
-                
-                // Image 2
-                {
-                type: jsPsychHtmlKeyboardResponse,
-                stimulus: function() {
-                    const img = jsPsych.timelineVariable('image2');
-                    return `
-                    <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
-                        <img src="${img}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh;display: block;" />
-                    </div>`;
-                },
-                choices: "NO_KEYS",
-                trial_duration: 1000
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: function () {
+                        const idx = Math.floor(Math.random() * 30) + 1;
+                        const maskPath = `stimuli/masks/mask_${String(idx).padStart(2, '0')}.jpg`;
+                        return `
+                        <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                            <img src="${maskPath}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
+                        </div>`;
+                    },
+                    choices: "NO_KEYS",
+                    trial_duration: 500,
+                    extensions: [{
+                        type: jsPsychExtensionWebgazer,
+                        params: {
+                            targets: ['img']
+                        }
+                    }]
                 },
 
-                // Mask after Image 2
+                // Fixation before image 2
                 {
-                type: jsPsychImageKeyboardResponse, 
-                stimulus: jsPsych.timelineVariable('mask'),
-                choices: "NO_KEYS",
-                trial_duration: 500
+                    type: jsPsychImageKeyboardResponse,
+                    stimulus: 'stimuli/fixation_cross.png',
+                    stimulus_height: imageHeight,
+                    choices: "NO_KEYS",
+                    trial_duration: 500,
+                    extensions: [{
+                        type: jsPsychExtensionWebgazer,
+                        params: {
+                            targets: ['#jspsych-html-keyboard-response-stimulus']
+                        }
+                    }]
                 },
 
-                // Similarity rating
+        // Image 2
+        {
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: function () {
+                const img = jsPsych.timelineVariable('image2');
+                return `
+                <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                    <img src="${img}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
+                </div>`;
+            },
+            choices: "NO_KEYS",
+            trial_duration: 1000,
+            extensions: [{
+                type: jsPsychExtensionWebgazer,
+                params: {
+                    targets: ['img']
+                }
+            }]
+        },
+
+        // Mask after Image 2
+        {
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: function () {
+                const idx = Math.floor(Math.random() * 30) + 1;
+                const maskPath = `stimuli/masks/mask_${String(idx).padStart(2, '0')}.jpg`;
+                return `
+                <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                    <img src="${maskPath}" style="height: ${26 * pixelsPerDegree}px; max-height: 100vh; display: block;" />
+                </div>`;
+            },
+            choices: "NO_KEYS",
+            trial_duration: 500,
+            extensions: [{
+                type: jsPsychExtensionWebgazer,
+                params: {
+                    targets: ['img']
+                }
+            }]
+        },
+
+        // Similarity rating
+        {
+            type: jsPsychSurveyMultiChoice,
+            questions: [
                 {
-                type: jsPsychSurveyMultiChoice,
-                questions: [
-                    {
                     prompt: "",
                     name: "similarity",
                     options: ["1", "2", "3", "4", "5"],
                     required: true,
                     horizontal: true
-                    }
-                ],
-                on_load: function () {
-                    const container = document.querySelector('.jspsych-content');
+                }
+            ],
+            on_load: function () {
+                const container = document.querySelector('.jspsych-content');
 
-                    // Add top prompt
-                    const promptText = document.createElement('div');
-                    promptText.innerHTML = `
-                    <p style="font-size: 20px; text-align: center;">
-                        Please rate the similarity of the two images using the following scale:<br>
-                        1 = Not at all similar, 5 = Extremely similar.
-                    </p>`;
-                    container.insertBefore(promptText, container.firstChild);
+                // Add top prompt
+                const promptText = document.createElement('div');
+                promptText.innerHTML = `
+                <p style="font-size: 20px; text-align: center;">
+                    Please rate the similarity of the two images using the following scale:<br>
+                </p>`;
+                container.insertBefore(promptText, container.firstChild);
 
-                    // Style the question block horizontally
-                    const questionWrapper = document.querySelector('.jspsych-survey-multi-choice-question');
-                    questionWrapper.style.display = 'flex';
-                    questionWrapper.style.justifyContent = 'center';
-                    questionWrapper.style.alignItems = 'center';
-                    questionWrapper.style.gap = '12px';
-                    questionWrapper.style.margin = '10px 0';
+                // Style the question block horizontally
+                const questionWrapper = document.querySelector('.jspsych-survey-multi-choice-question');
+                questionWrapper.style.display = 'flex';
+                questionWrapper.style.justifyContent = 'center';
+                questionWrapper.style.alignItems = 'center';
+                questionWrapper.style.gap = '12px';
+                questionWrapper.style.margin = '10px 0';
 
-                    // Create side labels
-                    const leftLabel = document.createElement('div');
-                    const rightLabel = document.createElement('div');
-                    leftLabel.innerText = "Not at all similar";
-                    rightLabel.innerText = "Extremely similar";
-                    [leftLabel, rightLabel].forEach(label => {
+                // Create side labels
+                const leftLabel = document.createElement('div');
+                const rightLabel = document.createElement('div');
+                leftLabel.innerText = "Not at all similar";
+                rightLabel.innerText = "Extremely similar";
+                [leftLabel, rightLabel].forEach(label => {
                     label.style.fontSize = '14px';
                     label.style.width = '120px';
-                    });
+                });
 
-                    // Insert side labels
-                    questionWrapper.prepend(leftLabel);
-                    questionWrapper.appendChild(rightLabel);
+                // Insert side labels
+                questionWrapper.prepend(leftLabel);
+                questionWrapper.appendChild(rightLabel);
 
-                    // Style each option (number above button)
-                    const options = questionWrapper.querySelectorAll('.jspsych-survey-multi-choice-option');
-                    options.forEach(option => {
+                // Style each option (number above button)
+                const options = questionWrapper.querySelectorAll('.jspsych-survey-multi-choice-option');
+                options.forEach(option => {
                     const label = option.querySelector('label');
                     const input = option.querySelector('input[type="radio"]');
                     option.innerHTML = '';
@@ -677,22 +919,28 @@
                     label.style.marginBottom = '4px';
                     option.appendChild(label);
                     option.appendChild(input);
-                    });
+                });
 
-                    // Hide red asterisk if exists
-                    const requiredMark = document.querySelector('.jspsych-survey-multi-choice-required');
-                    if (requiredMark) {
+                // Hide red asterisk if exists
+                const requiredMark = document.querySelector('.jspsych-survey-multi-choice-required');
+                if (requiredMark) {
                     requiredMark.style.display = 'none';
-                    }
                 }
-                }
+            }
+        }
+    ],
+    timeline_variables: [], // fill in your image1/image2 combinations here
+    randomize_order: true
+};
 
-            ],
-            timeline_variables: [], // fill in your image1/image2 combinations here
-            randomize_order: true
-            };
 
-
+        // ====== Resets calibration counter to 0 ======
+        const reset_calibration_counter = {
+            type: jsPsychCallFunction,
+            func: function() {
+                calibrationCountThisBlock = 0;
+            }
+        };
 
 
         // ====== Generate image pairs and set the pairs in a random order ======
@@ -714,7 +962,8 @@
 
         // ====== Divide into 4 ordered blocks of 50 trials ======
         const blocks = [];
-        const trialsPerBlock = 1;
+        const trialsPerBlock = 3; // how many trials in each block - should be 50 (1 for testing)
+        
         for (let i = 0; i < 4; i++) {
             const block_pairs = ordered_pairs.slice(i * trialsPerBlock, (i + 1) * trialsPerBlock);
             const block_images = block_pairs.flatMap(pair => [pair.image1, pair.image2]);
@@ -732,17 +981,26 @@
                         timeline: sequential_trial.timeline,
                         timeline_variables: block_pairs,
                         on_start: function() {
+                            calibrationCountThisBlock = 0;
                             const zoomPercent = Math.round(detectZoomLevel() * 100);
-                            jsPsych.data.addProperties({ [`zoom_at_block_${i + 1}_percent`]: zoomPercent });
+                            jsPsych.data.addProperties({
+                                [`zoom_at_block_${i + 1}_percent`]: zoomPercent,
+                            });
+                        },
+                        on_finish: function() {
+                            jsPsych.data.addProperties({
+                                [`calibration_count_at_block_${i + 1}`]: calibrationCountThisBlock
+                            }); 
                         }
                     },
-                    ...(i < 3 ? [{
-                        type: jsPsychHtmlKeyboardResponse,
+                    ...(i < 3 ? [
+                        {
+                        type: jsPsychHtmlButtonResponse,
                         stimulus: `<p style="font-size:24px;">Block ${i + 1} complete.<br>
-                                Please rest. The next block will begin in 1 minute.</p>`,
-                        choices: "NO_KEYS",
-                        trial_duration: 10000 // change back to 1 minute after testing
-                    }] : [])
+                                    Please rest. When you are ready, click <b>Continue</b>.</p>`,
+                        choices: ['Continue']
+                        }
+                    ] : [])
                 ]
             };
 
@@ -775,36 +1033,70 @@
         // Functions     // 
         ///////////////////
         
-        var timeline_start = [
-            /*distance_check_loop, // virtual_chinrest + get_pixels_per_degree,
-            consent_form,*/
-            /*preload_masks,
+        const timeline_start = [
+            
+            // ✅ Virtual chinrest: distance estimation & zoom validation
+            distance_check_loop,
+
+            // ✅ Consent + participant info
+            consent_form,
+            preload_masks,
             participant_info_questions,
+
+            // ✅ Instructions before eye tracking begins
             instructions,
             show_full_screen,
-            camera_instructions,*/
+            
+            
+            // ✅ Camera and WebGazer setup
+            camera_instructions,
             init_camera,
-            calibration_instructions,
-            calibration,
-            calibration_done,
-            validation_instructions, 
-            validation, 
-            recalibrate,
-            calibration_done,
-            begin, 
-            trial, 
-            //show_data,
-            before_exp_screen,
-            ...blocks, // 👈 all 8 blocks inserted here
+
+            // ✅ Calibration loop (with validation and optional retry instructions)
+            calibration_loop,
+
+            // ✅ Calibration was validated successfuly, thus finishing the calibration loop
+            validation_done,
+            // ✅ Transition screen before starting the main experiment
+            before_exp_screen,    
+            
+            // ✅ 1st Block
+            blocks[0],
+
+            pre_calibration_message,
+            reset_calibration_counter,
+            calibration_loop,
+            validation_done,
+            
+            // ✅ 2nd Block
+            blocks[1],
+
+            pre_calibration_message,
+            reset_calibration_counter,
+            calibration_loop,
+            validation_done,
+
+            // ✅ 3rd Block            
+            blocks[2],
+
+            pre_calibration_message,
+            reset_calibration_counter,
+            calibration_loop,
+            validation_done,
+
+            // ✅ 4th Block            
+            blocks[3],
+
+            // ✅ Exit fullscreen and debrief/thank-you screen
             exit_full_screen,
             finish_exp
         ];
+
 
         jatos.onLoad(() => {
             console.log("Experiment is starting");
             jsPsych.run(timeline_start);
         });
-
 
 
 
