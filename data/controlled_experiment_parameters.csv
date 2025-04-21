@@ -1,0 +1,21 @@
+Parameter,Description,Current Value,Set In
+pixelsPerDegree,Estimated visual angle scaling per participant,calibrated via virtual chinrest,virtual_chinrest.on_finish
+imageHeight,Image height in pixels,26 * pixelsPerDegree,global constant
+blindspot_reps,Repetitions in blindspot calibration,3,virtual_chinrest
+repetitions_per_point,Repeats per calibration dot,2,calibration
+roi_radius,Gaze validation tolerance in pixels,200,validation
+validation_duration,Duration of each validation point,2000ms,validation
+time_to_saccade,Delay before gaze is recorded,1000ms,validation
+fixation_radius_degrees,Radius for successful fixation in degrees,1,smartFixationCore
+fixation_buffer_window,Fixation check duration,500ms,smartFixationCore
+fixation_min_samples,Samples required within ROI for success,>=6,smartFixationCore
+fixation_required_percent,Percentage of samples inside ROI for success,>=50%,smartFixationCore
+trial_duration_image,Display time for each image,1000ms,sequential_trial
+trial_duration_mask,Display time for each mask,500ms,sequential_trial
+zoom_threshold,Zoom change tolerance,5%,check_zoom_loop
+trialsPerBlock,Number of trials in each block,3 (for testing),block loop
+blocks,Total number of blocks,4,block loop
+calibration_threshold,Validation threshold for calibration success,<10% in ROI triggers recalibration,calibration_loop.loop_function
+zoom logging,Zoom value recorded per block,yes,block.on_start
+calibrationCountThisBlock,Tracks calibrations per block,reset per block,on_start/on_finish of each block
+,,,

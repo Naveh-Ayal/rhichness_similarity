@@ -2,55 +2,67 @@ import os
 import random
 from PIL import Image
 
-# --- Config ---
-input_folder = "Pictures"
-output_folder = "Masks"
-grid_rows = 5
-grid_cols = 6
-tile_count = grid_rows * grid_cols
-standard_size = (600, 500)  # width x height
+# --- Configuration ---
+input_folder = "pictures"
+output_folder = "masks"
+num_images = 40
+tiles_per_image = 40
+grid_rows = grid_cols = 40
+tile_size = 16  # Since 640/40 = 16 tiles per dimension
+mask_size = (grid_cols * tile_size, grid_rows * tile_size)
 
-# --- Make sure output folder exists ---
+# --- Create output folder ---
 os.makedirs(output_folder, exist_ok=True)
 
-# --- Load all image file paths ---
+# --- Load images ---
 image_paths = sorted([
     os.path.join(input_folder, fname)
     for fname in os.listdir(input_folder)
-    if fname.lower().endswith((".jpg", ".jpeg", ".png"))
-])[:30]  # use first 30 images
+    if fname.lower().endswith(('.jpg', '.jpeg', '.png'))
+])[:num_images]
 
-# --- Resize and cut each image into tiles ---
-print("Cutting images into tiles...")
+assert len(image_paths) == num_images, f"Expected {num_images} images, found {len(image_paths)}"
+
+# --- Tile each image and sample 40 tiles ---
 image_tiles = []
-
 for path in image_paths:
     img = Image.open(path).convert("RGB")
-    img = img.resize(standard_size, Image.NEAREST)  # Ensure consistent size
-    w, h = img.size
-    tile_w, tile_h = w // grid_cols, h // grid_rows
-    tiles = []
+    img = img.resize((640, 640), Image.NEAREST)
 
-    for i in range(grid_rows):
-        for j in range(grid_cols):
-            box = (j * tile_w, i * tile_h, (j + 1) * tile_w, (i + 1) * tile_h)
-            tile = img.crop(box)
+    tiles = []
+    for i in range(0, 640, tile_size):
+        for j in range(0, 640, tile_size):
+            tile = img.crop((j, i, j + tile_size, i + tile_size))
             tiles.append(tile)
 
-    image_tiles.append(tiles)
+    sampled = random.sample(tiles, tiles_per_image)
+    image_tiles.append(sampled)
 
-# --- Generate composite mask images ---
-print("Creating composite mask images...")
-for mask_index in range(tile_count):
-    new_tiles = [image_tiles[i][mask_index] for i in range(tile_count)]  # one tile from each image
+# --- Generate masks ---
+for mask_idx in range(30):
+    selected_tiles = [tile for tiles in image_tiles for tile in tiles]
+    random.shuffle(selected_tiles)
 
-    mask_img = Image.new("RGB", (tile_w * grid_cols, tile_h * grid_rows), color=(128, 128, 128))  # mid-gray bg
-
-    for idx, tile in enumerate(new_tiles):
+    mask = Image.new("RGB", mask_size)
+    for idx, tile in enumerate(selected_tiles):
         row, col = divmod(idx, grid_cols)
-        mask_img.paste(tile, (col * tile_w, row * tile_h))
+        mask.paste(tile, (col * tile_size, row * tile_size))
 
-    mask_path = os.path.join(output_folder, f"mask_{mask_index+1:02d}.jpg")
-    mask_img.save(mask_path)
+    out_path = os.path.join(output_folder, f"mask_{mask_idx + 1:02d}.jpg")
+    mask.save(out_path)
 
-print("✅ Done! Masks saved in:", output_folder)
+# --- Write log file ---
+log_path = os.path.join(output_folder, "mask_generation_info.txt")
+with open(log_path, "w") as log:
+    log.write("🧩 Mask Generation Summary\n")
+    log.write("--------------------------\n")
+    log.write(f"Image size: 640 x 640 px\n")
+    log.write(f"Grid size: {grid_rows} x {grid_cols} (1600 tiles)\n")
+    log.write(f"Tiles per image: {tiles_per_image}\n")
+    log.write(f"Number of images used: {num_images}\n")
+    log.write(f"Masks generated: 30\n\n")
+    log.write("Images used:\n")
+    for path in image_paths:
+        log.write(f"- {os.path.basename(path)}\n")
+
+print("✅ Done. Masks and log file saved in:", output_folder)
