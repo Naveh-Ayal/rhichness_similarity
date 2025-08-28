@@ -1451,12 +1451,13 @@
       {
         type: jsPsychCallFunction,
         func: function() {
+          clearGlobalDisplayState();
           pixelsPerDegree = 50;
           imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
           letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
           viewingDistance = 60;
           distanceCalibrationAttempts = 0;
-          console.log("CALIBRATION RESET: pixelsPerDegree set to", pixelsPerDegree);
+          console.log("CALIBRATION RESET: cleared transforms; pixelsPerDegree set to", pixelsPerDegree);
         }
       },
       createVirtualChinrest(),
@@ -1550,6 +1551,7 @@
       enter_fullscreen,
       {
         timeline: [
+          createZoomInstructionLoopNode(),
           distance_calibration_loop,
           calibration_check,
           preload_images,
@@ -1596,6 +1598,7 @@
     if (!data.distance_within_range) {
       // Full experiment restart
       experimentRestartCount++;
+      clearGlobalDisplayState();
       resetAllCalibrationParameters();
       jsPsych.data.addProperties({ experiment_restart_count: experimentRestartCount });
       jsPsych.endExperiment('Experiment restarted due to distance out of range.');
@@ -1651,181 +1654,121 @@
   // ====== MAIN TIMELINE LAUNCH =====
   jsPsych.run(getMainTimeline());
 
-  // ===== ZOOM CONTROL UTILITIES DISABLED =====
-  // let initialZoomState = null;
+  // ===== ZOOM CONTROL UTILITIES (ENABLED FOR STRICT CHECK) =====
+  function getZoomLevel() {
+    const ratio = window.outerWidth / window.innerWidth;
+    let zoom = Math.round(ratio * 100);
+    if (zoom < 10 || zoom > 500) zoom = 100; // fallback
+    return zoom;
+  }
 
-  // Returns the browser zoom as a percentage (ignores system scaling)
-  // function getZoomLevel() {
-  //   const ratio = window.outerWidth / window.innerWidth;
-  //   let zoom = Math.round(ratio * 100);
-  //   if (zoom < 10 || zoom > 500) zoom = 100; // fallback
-  //   return zoom;
-  // }
+  function getDisplayZoom() {
+    const z = getZoomLevel();
+    return (z >= 99 && z <= 101) ? 100 : z;
+  }
 
-  // function getCurrentZoom() {
-  //   return getZoomLevel();
-  // }
+  function isZoom100Strict() {
+    const z = getZoomLevel();
+    return z >= 99 && z <= 101;
+  }
 
-  // Returns true if zoom is within 99-101%
-  // function isZoom100() {
-  //   const zoom = getZoomLevel();
-  //   return zoom >= 99 && zoom <= 101;
-  // }
+  function createZoomInstructionScreen() {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: function() {
+        const currentZoom = getDisplayZoom();
+        return `
+          <div style="max-width: 700px; margin: 0 auto; font-size: 20px; line-height: 1.6;">
+            <h3 style="color: #dc3545;">⚠ Browser Zoom Must Be 100%</h3>
+            <p>Your current browser zoom: <strong>${currentZoom}%</strong></p>
+            <p>Required zoom: <strong>100%</strong></p>
+            <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>How to fix this:</strong></p>
+              <ul style="text-align: left; margin: 10px 0;">
+                <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac) to reset zoom instantly.</li>
+                <li>Or go to your browser menu and select "Zoom" → "Reset to 100%".</li>
+                <li>Or use <strong>Ctrl+Mouse Wheel</strong> (or <strong>Cmd+Mouse Wheel</strong> on Mac) to adjust zoom.</li>
+              </ul>
+            </div>
+            <p>After adjusting your zoom, click the button below to check again.</p>
+          </div>
+        `;
+      },
+      choices: function() {
+        return isZoom100Strict() ? ['Continue'] : ['Check Zoom Again'];
+      },
+      data: {
+        trial_type: 'initial_zoom_check',
+        keep: true
+      },
+      on_finish: function(data) {
+        data.browser_zoom_percent = getDisplayZoom();
+        data.zoom_correct = isZoom100Strict();
+      }
+    };
+  }
 
-  // Returns true if zoom has changed from initialZoomState by more than 3%
-  // function hasZoomChanged() {
-  //   if (initialZoomState === null) return false;
-  //   const currentZoom = getZoomLevel();
-  //   return Math.abs(currentZoom - initialZoomState) > 3;
-  // }
+  function createGoodZoomScreen() {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: function() {
+        const currentZoom = getDisplayZoom();
+        return `
+          <div style="max-width: 700px; margin: 0 auto; font-size: 20px; line-height: 1.6;">
+            <h3 style="color: #28a745;">✓ Browser Zoom Correct</h3>
+            <p>Your browser zoom is at <strong>${currentZoom}%</strong> - perfect!</p>
+            <p>You can continue with the experiment.</p>
+          </div>
+        `;
+      },
+      choices: ['Continue'],
+      data: { trial_type: 'zoom_ok', keep: true }
+    };
+  }
 
-  // Helper to get display zoom (show 100% for 99-101%)
-  // function getDisplayZoom() {
-  //   const z = getZoomLevel();
-  //   return (z >= 99 && z <= 101) ? 100 : z;
-  // }
+  function createZoomInstructionLoopNode() {
+    return {
+      timeline: [
+        {
+          timeline: [createZoomInstructionScreen()],
+          conditional_function: function() {
+            return !isZoom100Strict();
+          }
+        },
+        {
+          timeline: [createGoodZoomScreen()],
+          conditional_function: function() {
+            return isZoom100Strict();
+          }
+        }
+      ],
+      loop_function: function() {
+        // If zoom is acceptable, stop the loop; otherwise, loop again to show bad popup
+        return !isZoom100Strict();
+      }
+    };
+  }
 
-  // ZOOM INSTRUCTION SCREEN DISABLED
-  // Enhanced pre-calibration zoom instruction screen with more education
-  // function createZoomInstructionScreen() {
-  //   return {
-  //     type: jsPsychHtmlButtonResponse,
-  //     stimulus: function() {
-  //       const currentZoom = getZoomLevel();
-  //       const displayZoom = getDisplayZoom();
-  //       const isCorrectZoom = isZoom100();
-  //       if (isCorrectZoom) {
-  //         return `
-  //           <div style="max-width: 600px; margin: 0 auto; font-size: 22px;">
-  //             <h3 style="color: #28a745;">✓ Browser Zoom Correct</h3>
-  //             <p>Your browser zoom is at <strong>${displayZoom}%</strong> - perfect!</p>
-  //             <p>You can continue with the experiment.</p>
-  //           </div>
-  //         `;
-  //       } else {
-  //         return `
-  //           <div style="max-width: 600px; margin: 0 auto; font-size: 22px;">
-  //             <h3 style="color: #dc3545;">⚠ Browser Zoom Must Be 100%</h3>
-  //             <p>Your current browser zoom: <strong>${displayZoom}%</strong></p>
-  //             <p>Required zoom: <strong>100%</strong></p>
-  //             <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-  //               <p><strong>How to fix this:</strong></p>
-  //               <ul style="text-align: left; margin: 10px 0;">
-  //                 <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac) to reset zoom instantly.</li>
-  //                 <li>Or go to your browser menu and select "Zoom" → "Reset to 100%".</li>
-  //                 <li>Or use <strong>Ctrl+Mouse Wheel</strong> (or <strong>Cmd+Mouse Wheel</strong> on Mac) to adjust zoom.</li>
-  //                 <li>On some laptops, you may need to use the trackpad gesture (pinch to zoom) to adjust.</li>
-  //                 <li>If you are using a browser in a language other than English, look for the zoom option in the menu (often marked with a % sign).</li>
-  //                 <li>If you are stuck, try searching online for "how to set browser zoom to 100%" for your browser.</li>
-  //               </ul>
-  //             </div>
-  //             <p>After adjusting your zoom, click the button below to check again.</p>
-  //           </div>
-  //         `;
-  //       }
-  //     },
-  //     choices: function() {
-  //       return isZoom100() ? ['Continue'] : ['Check Zoom Again'];
-  //     },
-  //     data: {
-  //       trial_type: 'initial_zoom_check',
-  //       keep: true
-  //     },
-  //     on_finish: function(data) {
-  //       const zoom = getZoomLevel();
-  //       data.browser_zoom_percent = getDisplayZoom();
-  //       data.zoom_correct = isZoom100();
-  //       if (isZoom100() && initialZoomState === null) {
-  //         initialZoomState = zoom;
-  //       }
-  //     }
-  //   };
-  // }
+  // ====== INSERT ZOOM CHECK BEFORE CALIBRATION =====
 
-  // ZOOM WARNING SCREEN DISABLED
-  // Mid-experiment zoom warning popup (blocking)
-  // function createZoomWarningScreen() {
-  //   return {
-  //     type: jsPsychHtmlButtonResponse,
-  //     stimulus: function() {
-  //       const currentZoom = getZoomLevel();
-  //       const displayZoom = getDisplayZoom();
-  //       return `
-  //         <div style="max-width: 600px; margin: 0 auto; font-size: 22px;">
-  //           <h3 style="color: #dc3545;">⚠ Browser Zoom Changed</h3>
-  //           <p>Your browser zoom is now <strong>${displayZoom}%</strong>.</p>
-  //           <p>For accurate results, you <b>must</b> reset your browser zoom to <strong>100%</strong> before continuing.</p>
-  //           <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-  //             <p><strong>How to fix this:</strong></p>
-  //             <ul style="text-align: left; margin: 10px 0;">
-  //               <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac) to reset zoom instantly.</li>
-  //               <li>Or go to your browser menu and select "Zoom" → "Reset to 100%".</li>
-  //               <li>Or use <strong>Ctrl+Mouse Wheel</strong> (or <strong>Cmd+Mouse Wheel</strong> on Mac) to adjust zoom.</li>
-  //               <li>On some laptops, you may need to use the trackpad gesture (pinch to zoom) to adjust.</li>
-  //               <li>If you are using a browser in a language other than English, look for the zoom option in the menu (often marked with a % sign).</li>
-  //               <li>If you are stuck, try searching online for "how to set browser zoom to 100%" for your browser.</li>
-  //             </ul>
-  //           </div>
-  //           <p>After adjusting your zoom, click the button below to check again.</p>
-  //         </div>
-  //       `;
-  //     },
-  //     choices: function() {
-  //       return isZoom100() ? ['Continue'] : ['Check Zoom Again'];
-  //     },
-  //     data: {
-  //       trial_type: 'zoom_warning',
-  //       keep: true
-  //     },
-  //     on_finish: function(data) {
-  //       const zoom = getZoomLevel();
-  //       data.browser_zoom_percent = getDisplayZoom();
-  //       data.zoom_correct = isZoom100();
-  //       data.zoom_warning_triggered = true;
-  //       if (isZoom100() && initialZoomState !== null) {
-  //         initialZoomState = zoom; // reset baseline to new value
-  //       }
-  //     }
-  //   };
-  // }
+  // ===== DISPLAY RESET UTILITIES =====
+  function clearGlobalDisplayState() {
+    try {
+      const content = document.getElementById('jspsych-content');
+      if (content) {
+        content.style.transform = '';
+        content.style.transformOrigin = '';
+      }
+      const wrappers = document.getElementsByClassName('jspsych-content-wrapper');
+      if (wrappers && wrappers.length) {
+        for (let i = 0; i < wrappers.length; i++) {
+          wrappers[i].style.transform = '';
+          wrappers[i].style.transformOrigin = '';
+        }
+      }
+      document.body.style.zoom = '';
+    } catch (e) { /* noop */ }
+  }
 
-  // ========== ZOOM MONITORING DISABLED ==========
-  // Helper to wrap on_finish to always add zoom info and trigger warning if needed
-  // function defaultOnFinish(orig) {
-  //   return function(data) {
-  //     if (typeof orig === 'function') orig.call(this, data);
-  //     data.browser_zoom_percent = getCurrentZoom();
-  //     data.zoom_changed = hasZoomChanged();
-  //     // If zoom changed, trigger warning popup before next trial
-  //     if (hasZoomChanged()) {
-  //       jsPsych.addNodeToEndOfTimeline(createZoomWarningLoopNode());
-  //       data.zoom_warning_triggered = true;
-  //     } else {
-  //       data.zoom_warning_triggered = false;
-  //     }
-  //   };
-  // }
-
-  // Helper: loop node for zoom check (blocks until zoom is 100%)
-  // function createZoomInstructionLoopNode() {
-  //   return {
-  //     timeline: [createZoomInstructionScreen()],
-  //     loop_function: function(data) {
-  //       // Only proceed if zoom is correct
-  //       const last = data.values()[0];
-  //       return !(last && last.zoom_correct === true);
-  //     }
-  //   };
-  // }
-
-  // function createZoomWarningLoopNode() {
-  //   return {
-  //     timeline: [createZoomWarningScreen()],
-  //     loop_function: function(data) {
-  //       const last = data.values()[0];
-  //       return !(last && last.zoom_correct === true);
-  //     }
-  //   };
-  // }
 </script>
 </html>

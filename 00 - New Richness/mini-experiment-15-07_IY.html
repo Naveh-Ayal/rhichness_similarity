@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pilot (Letters) – 200 Trials</title>
+  <title>Letter Discrimination & Image Similarity Experiment</title>
   <!-- jsPsych and plugins -->
   <script src="jspsych/dist/jspsych.js"></script>
   <script src="jspsych/dist/plugin-html-keyboard-response.js"></script>
@@ -36,21 +37,6 @@
     .jspsych-content {
         max-width: 100% !important;
         text-align: center;
-    }
-    /* === Added: Larger font for all instruction/consent/break/feedback screens === */
-    .instruction-text {
-        font-size: 28px !important;
-        line-height: 1.7 !important;
-    }
-    .instruction-text-small {
-        font-size: 22px !important;
-        line-height: 1.6 !important;
-    }
-    .instruction-heading {
-        font-size: 36px !important;
-    }
-    .instruction-subheading {
-        font-size: 28px !important;
     }
     .image-with-letter {
         position: relative;
@@ -157,12 +143,8 @@
   const LETTER_SIZE_VISUAL_ANGLE = 1;
   const L_VERTICAL_POSITION_PERCENT = 20;
   const T_PROBABILITY = 0.5;
-  const MIN_DISTANCE_CM = 40; // Updated to 40
-  const MAX_DISTANCE_CM = 80; // Updated to 80
-  
-  // *** UPDATED: Set based on actual number of available images ***
-  // Updated after running the rename script
-  const AVAILABLE_MAIN_IMAGES = 400; // Images available: image_001.jpg to image_400.jpg
+  const MIN_DISTANCE_CM = 40;
+  const MAX_DISTANCE_CM = 100;
   
   let pixelsPerDegree = 50;
   let imageHeight = 0;
@@ -177,19 +159,6 @@
   const maskFiles = Array.from({length: NUM_MASKS}, (_, i) =>
     `stimuli/masks/mask_${String(i + 1).padStart(2, '0')}.jpg`
   );
-
-  // ===== RESTART COUNTER =====
-  let experimentRestartCount = 0;
-
-  // ===== RESET ALL CALIBRATION PARAMETERS =====
-  function resetAllCalibrationParameters() {
-    pixelsPerDegree = 50;
-    imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
-    letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
-    viewingDistance = 60;
-    distanceCalibrationAttempts = 0;
-    // initialZoomState = null; // ZOOM CONTROL DISABLED
-  }
 
   // ===== JSPSYCH INIT =====
   const jsPsych = initJsPsych({
@@ -214,7 +183,7 @@
     document.body.style.cursor = 'auto';
   }
 
-  // ZOOM CONTROL DISABLED
+  // ZOOM DETECTION TEMPORARILY DISABLED
   // Store initial zoom state when experiment starts
   // let initialZoomState = null;
   
@@ -238,28 +207,30 @@
   // }
 
   // Check if zoom is at 100% with minimal tolerance
-  // function isZoom100() {
-  //   const zoom = getZoomLevel();
-  //   // Very tight tolerance - only accept 99-101% as "100%"
-  //   return zoom >= 99 && zoom <= 101;
-  // }
+  function isZoom100() {
+    // const zoom = getZoomLevel();
+    // Very tight tolerance - only accept 99-101% as "100%"
+    // return zoom >= 99 && zoom <= 101;
+    return true; // Always return true - zoom check disabled
+  }
 
   // Only trigger zoom change if there's a significant change from the initial state
-  // function hasZoomChanged() {
-  //   const currentZoom = getZoomLevel();
-  //   
-  //   // If we haven't stored initial state yet, store it now
-  //   if (initialZoomState === null) {
-  //     initialZoomState = currentZoom;
-  //     return false; // Don't trigger on first check
-  //   }
-  //   
-  //   // Only trigger if zoom has changed significantly from initial state
-  //   const zoomDifference = Math.abs(currentZoom - initialZoomState);
-  //   return zoomDifference > 3; // More than 3% change
-  // }
+  function hasZoomChanged() {
+    // const currentZoom = getZoomLevel();
+    // 
+    // // If we haven't stored initial state yet, store it now
+    // if (initialZoomState === null) {
+    //   initialZoomState = currentZoom;
+    //   return false; // Don't trigger on first check
+    // }
+    // 
+    // // Only trigger if zoom has changed significantly from initial state
+    // const zoomDifference = Math.abs(currentZoom - initialZoomState);
+    // return zoomDifference > 3; // More than 3% change
+    return false; // Never trigger zoom change - zoom check disabled
+  }
 
-  // ZOOM CHECK FUNCTIONS DISABLED
+  // ZOOM CHECK FUNCTIONS TEMPORARILY DISABLED
   // Create zoom check screen - initial version (shows success message)
   // function createInitialZoomCheck() {
   //   return {
@@ -395,49 +366,10 @@
   function generateBalancedTrials(numTrials, isPractice = false) {
     const trials = [];
     
-    let allImages = [];
-    
-    if (isPractice) {
-      // *** UPDATED: Use practice images from their respective folders ***
-      // Practice regular images (will be used for some practice trials)
-      const practiceRegularImages = [
-        //'stimuli/pictures/practice_regular/000000466041.jpg',
-        //'stimuli/pictures/practice_regular/000000481412.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_03.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_04.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_05.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_06.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_07.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_08.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_09.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_10.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_11.jpg',
-        'stimuli/pictures/practice_regular/practice_image_reg_12.jpg'
-      ];
-      
-      // Practice similar images (will be used for some practice trials)  
-      const practiceSimilarImages = [
-        //'stimuli/pictures/practice_similar/000000553312.jpg',
-        //'stimuli/pictures/practice_similar/000000548450.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_03.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_04.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_05.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_06.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_07.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_08.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_09.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_10.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_11.jpg',
-        'stimuli/pictures/practice_similar/practice_image_sim_12.jpg'
-      ];
-      
-      // Combine practice images
-      allImages = [...practiceRegularImages, ...practiceSimilarImages];
-    } else {
-      // *** UPDATED: Use main experimental images with new naming scheme ***
-      for (let i = 1; i <= AVAILABLE_MAIN_IMAGES; i++) {
-        allImages.push(`stimuli/pictures/image_${String(i).padStart(3, '0')}.jpg`);
-      }
+    // Get all available images
+    const allImages = [];
+    for (let i = 1; i <= 400; i++) {
+      allImages.push(`stimuli/pictures/image_${String(i).padStart(3, '0')}.jpg`);
     }
     
     // Shuffle images to ensure random selection
@@ -493,15 +425,12 @@
       const letter1 = letterConditions[i];
       const letter2 = sameConditions[i] ? letter1 : (letter1 === 'T' ? 'L' : 'T');
       
-      // For practice, include some similar pairs using consecutive images
+      // For practice, include some similar pairs
       if (isPractice && i < numTrials / 2) {
-        // Use consecutive images from practice_similar folder which are more likely to be similar
-        const similarImages = shuffledImages.filter(img => img.includes('practice_similar'));
-        if (similarImages.length > 1) {
-          const baseIdx = Math.floor(Math.random() * (similarImages.length - 1));
-          image1 = similarImages[baseIdx];
-          image2 = similarImages[baseIdx + 1];
-        }
+        // Use consecutive images which are more likely to be similar
+        const baseIdx = Math.floor(Math.random() * (shuffledImages.length - 1));
+        image1 = shuffledImages[baseIdx];
+        image2 = shuffledImages[baseIdx + 1];
       }
       
       trials.push({
@@ -656,12 +585,15 @@
       data.calibration_attempt = distanceCalibrationAttempts + 1;
       
       if (!data.distance_within_range) {
-        // Full experiment restart
-        experimentRestartCount++;
-        resetAllCalibrationParameters();
-        jsPsych.data.addProperties({ experiment_restart_count: experimentRestartCount });
-        jsPsych.endExperiment('Experiment restarted due to distance out of range.');
-        setTimeout(() => { jsPsych.run(getMainTimeline()); }, 100);
+        distanceCalibrationAttempts++;
+        
+        // FULL RESET OF CALIBRATION PARAMETERS
+        pixelsPerDegree = 50;
+        imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+        letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+        viewingDistance = 60; // Default estimate
+        
+        console.log(`Distance calibration failed - attempt ${distanceCalibrationAttempts}. All parameters reset to defaults.`);
       }
     }
   };
@@ -676,8 +608,8 @@
   const edge_number_instructions = {
     type: jsPsychHtmlButtonResponse,
     stimulus: `
-      <div class="instruction-text" style="max-width:700px; margin:0 auto;">
-        <h3 class="instruction-heading">Screen Size Test</h3>
+      <div style="max-width:700px; margin:0 auto; font-size:18px;">
+        <h3>Screen Size Test</h3>
         <p>To ensure the images are fully visible, you will now see an image with 4 numbers—one at each edge (top-left, top-right, bottom-left, bottom-right).</p>
         <p>Please carefully look for the numbers, then fill them in the boxes on the next screen. <br>
         If you cannot see a number because it is outside the screen, click the red button on the left to the image to restart calibration.</p>
@@ -843,8 +775,8 @@
     return {
       type: jsPsychHtmlButtonResponse,
       stimulus: `
-        <div class="instruction-text" style="max-width: 600px; margin: 0 auto; text-align: center;">
-          <h2 style="color: #d63031;" class="instruction-heading">Screen Size Test Failed</h2>
+        <div style="max-width: 600px; margin: 0 auto; font-size: 18px; text-align: center;">
+          <h2 style="color: #d63031;">Screen Size Test Failed</h2>
           <p>After 3 attempts, you were unable to see all the numbers at the image corners.</p>
           <p>This means the calibrated image size may not fit properly on your screen.</p>
           <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
@@ -871,8 +803,8 @@
     return {
       type: jsPsychHtmlButtonResponse,
       stimulus: `
-        <div class="instruction-text" style="max-width: 600px; margin: 0 auto; text-align: center;">
-          <h2 style="color: #d63031;" class="instruction-heading">Calibration Will Restart</h2>
+        <div style="max-width: 600px; margin: 0 auto; font-size: 20px; text-align: center;">
+          <h2 style="color: #d63031;">Calibration Will Restart</h2>
           <p>
             The experiment will now restart from the calibration step.<br>
             Please click below to begin the calibration again.
@@ -888,42 +820,57 @@
     let attempt = 1;
     let edgeNumbers = generateEdgeNumbers();
     let restartNeeded = false;
+
+    // We'll create the node directly before each loop (jsPsych doesn't support dynamic function nodes)
     let edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
+
     return {
       timeline: [
-        { timeline: [edgeTrial], conditional_function: function() { return !restartNeeded; } },
-        { timeline: [createEdgeRestartPromptScreen()], conditional_function: function() { return restartNeeded; } }
+        // 1. Edge number task
+        {
+          timeline: [edgeTrial],
+          conditional_function: function() { return !restartNeeded; }
+        },
+        // 2. Restart prompt
+        {
+          timeline: [createEdgeRestartPromptScreen()],
+          conditional_function: function() { return restartNeeded; }
+        }
       ],
       loop_function: function(data) {
         const resp = data.values()[0];
+
+        // 1. After showing restart prompt, reset everything for next loop
         if (restartNeeded) {
           restartNeeded = false;
           attempt = 1;
           edgeNumbers = generateEdgeNumbers();
-          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
+          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt); // new task object for next loop
           return false;
         }
+
+        // 2. Red button or 3 fails: trigger restart
         if (
           resp.fail ||
           (attempt >= 3 && JSON.stringify(resp.user_entries) !== JSON.stringify(edgeNumbers.map(String)))
         ) {
-          // Full experiment restart
-          experimentRestartCount++;
-          resetAllCalibrationParameters();
-          jsPsych.data.addProperties({ experiment_restart_count: experimentRestartCount });
-          jsPsych.endExperiment('Experiment restarted due to image size test failure.');
-          setTimeout(() => { jsPsych.run(getMainTimeline()); }, 100);
-          return false;
+          restartNeeded = true;
+          jsPsych.data.addProperties({ edge_test_restart_needed: true });
+          return true; // show prompt, then loop will break
         }
+
+        // 3. Correct input
         if (JSON.stringify(resp.user_entries) === JSON.stringify(edgeNumbers.map(String))) {
           jsPsych.data.addProperties({ edge_test_restart_needed: false });
           attempt = 1;
           edgeNumbers = generateEdgeNumbers();
-          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
-          return false;
+          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt); // new task object for next loop
+          return false; // proceed to experiment
         }
+
+        // 4. Wrong input but <3 attempts: try again
         attempt++;
-        return true;
+        return true; // loop again
       }
     };
   }
@@ -932,14 +879,14 @@
   const calibration_failed = {
     type: jsPsychHtmlButtonResponse,
     stimulus: `
-      <div class="instruction-text" style="max-width: 600px; margin: 0 auto; text-align: center;">
-        <h2 style="color: #dc3545;" class="instruction-heading">Calibration Unsuccessful</h2>
+      <div style="max-width: 600px; margin: 0 auto; font-size: 18px; text-align: center;">
+        <h2 style="color: #dc3545;">Calibration Unsuccessful</h2>
         <p>After 5 attempts, we were unable to calibrate your viewing distance to the required range (${MIN_DISTANCE_CM}-${MAX_DISTANCE_CM} cm).</p>
         <p>Unfortunately, you cannot participate in this study without proper distance calibration.</p>
         <p style="margin-top: 30px;">
           <strong>Thank you for your interest in participating.</strong>
         </p>
-        <p class="instruction-text-small" style="color: #666;">
+        <p style="font-size: 16px; color: #666;">
           Click anywhere to finish the experiment.
         </p>
       </div>
@@ -962,15 +909,23 @@
   const consent_form = {
     type: jsPsychHtmlButtonResponse,
     stimulus: `
-      <div class="instruction-text" style="max-width: 800px; margin: 0 auto; text-align: left;">
-        <h2 style="text-align: center;" class="instruction-heading">Study Consent Form</h2>
+      <div style="max-width: 800px; margin: 0 auto; text-align: left; font-size: 18px;">
+        <h2 style="text-align: center;">Study Consent Form</h2>
+
         <p>The School of Psychological Sciences at Tel-Aviv University would like to thank you for participating in an important scientific study in the cognitive psychology field.</p>
+
         <p><strong>Study Duration:</strong> This experiment will take approximately <strong>30 minutes</strong> to complete.</p>
+
         <p><strong>What you will do:</strong> You will view pairs of images with letters overlaid on them and answer questions about the letters and the images.</p>
+
         <p>All information you provide will remain confidential and will not be associated with your name.</p>
+
         <p>If you agree to participate, please be aware that you are free to withdraw at any point throughout the duration of the experiment.</p>
+
         <p>If you have any further questions concerning this study please feel free to contact us through email: mudriklab2@gmail.com.</p>
+
         <p>Your participation is solicited, yet strictly voluntary.</p>
+
         <p><strong>Please indicate below that you understand your rights and agree to participate in the experiment.</strong></p>
       </div>
     `,
@@ -1019,13 +974,15 @@
   const initial_instructions = {
     type: jsPsychHtmlButtonResponse,
     stimulus: `
-      <div class="instruction-text" style="max-width: 900px; margin: 0 auto; text-align: left;">
-        <h2 style="text-align: center; color: #2d3436;" class="instruction-heading">Before We Begin</h2>
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <h2 style="text-align: center; color: #2d3436;">Before We Begin</h2>
+        
         <div style="background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
           <p style="margin: 0; text-align: center; font-weight: bold; color: #0984e3;">
             Please ensure you are in a comfortable viewing position before starting the experiment.
           </p>
         </div>
+        
         <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
           <p><strong>Make sure to follow the following instructions:</strong></p>
           <ul>
@@ -1034,6 +991,7 @@
             <li>The experiment will switch to fullscreen mode automatically</li>
           </ul>
         </div>
+        
         <p style="text-align: center; margin-top: 30px;">
           <strong>Click continue when you're ready to proceed.</strong>
         </p>
@@ -1046,17 +1004,18 @@
   const instructions = {
     type: jsPsychInstructions,
     show_clickable_nav:true,
-    pages: [
-      `<div class="instruction-text" style="max-width: 900px; margin: 0 auto; text-align: left;">
-        <h2 style="text-align: center; color: #2d3436;" class="instruction-heading">Instructions</h2>
+    pages: [`
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <h2 style="text-align: center; color: #2d3436;">Instructions</h2>
+                
         <p>In each trial of this experiment, pairs of images of scenes will be presented on the screen one after another. On top of each image a small letter will be presented in the center.</p>
         <p>In each trial, you will be asked to decide if the letters that appeared were the same letter or not, and then to rate how visually similar the two images were.</p>
-      </div>`,
-      `<div class="instruction-text" style="max-width: 900px; margin: 0 auto; text-align: left;">
+      </div>`, `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
         <p>You will first complete  a few practice trials before the actual experiment begins.</p>
         <p>We will now give you more detailed instructions, please read them carefully.</p>
-      </div>`,
-      `<div class="instruction-text-small" style="max-width: 900px; margin: 0 auto; text-align: left;">
+      </div>`, `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 16px; line-height: 1.6;">
         <p><strong>Your task:</strong></p>
         <ul>
           <li>
@@ -1090,9 +1049,9 @@
             </p>
         </div>
       </div>    
-    `,
-      `<div class="instruction-text" style="max-width: 900px; margin: 0 auto; text-align: left;">
-        <h3 style="color: #2d3436;" class="instruction-subheading">Trial Demonstration:</h3>
+    `, `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <h3 style="color: #2d3436;">Trial Demonstration:</h3>
         <p>Please press the Next button to start a demonstration of a trial in a <b>slow-paced mode</b></p>
         <p>Make sure to fixate on the center of the screen and watch the letters and images</p>
         <p>Then, try to answers the two questions at the end of the trial</p>
@@ -1104,18 +1063,18 @@
   const practice_instructions = {
     type: jsPsychInstructions,
     show_clickable_nav:true,
-    pages: [
-      `<div class="instruction-text" style="max-width: 900px; margin: 0 auto; text-align: center;">
-        <p style="margin-top: 30px; font-size: 32px">
+    pages: [`
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <p style="text-align: center; margin-top: 30px; font-size: 26px">
           Well done, you have completed the demonstration trial. Note that the actual trials will run <b>much faster</b>, so please pay close attention.
         </p>
-        <p style="margin-top: 30px; font-size: 32px">
+        <p style="text-align: center; margin-top: 30px; font-size: 26px">
           You will now complete practice trials. During the practice trials, as in the demonstration trial you will receive feedback on your answer about the letters. This feedback will not appear in the actual experiment.
         </p>
-        <h2 style="margin-top: 30px;" class="instruction-subheading">
+        <h2 style="text-align: center; margin-top: 30px;">
           <strong>To start the practice session press the Next button</strong>
         </h2>
-        <h3 style="margin-top: 30px;">
+        <h3 style="text-align: center; margin-top: 30px;">
           Good Luck! 🍀✨
         </h3>
       </div>
@@ -1263,13 +1222,13 @@
           </p>
           <div style="display: flex; justify-content: center; align-items: center; gap: 32px; margin: 50px 0;">
             <span style="width: 90px; font-size: 15px; color: #555; text-align: center; flex-shrink: 0;">
-              Very<br>Different
+              Very<br>similar
             </span>
             <div id="rating-buttons" style="display: flex; gap: 12px;">
               <!-- Buttons will be moved here by jsPsych -->
             </div>
             <span style="width: 90px; font-size: 15px; color: #555; text-align: center; flex-shrink: 0;">
-              Very<br>Similar
+              Very<br>different
             </span>
           </div>
         </div>
@@ -1320,12 +1279,13 @@
       stimulus: function() {
         const lastTrial = jsPsych.data.get().last(2).values()[0]; // Get letter discrimination response
         const correct = lastTrial.letter_discrimination_correct;
+        
         return `
-          <div class="instruction-text" style="max-width: 500px; margin: 0 auto;">
+          <div style="max-width: 500px; margin: 0 auto; font-size: 18px;">
             <h3>${correct ? '✓ Correct!' : '✗ Incorrect'}</h3>
             <p><strong>Your answer:</strong> ${lastTrial.participant_response_same_different}</p>
             <p><strong>Correct answer:</strong> ${lastTrial.ground_truth_same_different}</p>
-            <p class="instruction-text-small" style="margin-top: 20px; color: #666;">
+            <p style="font-size: 14px; color: #666; margin-top: 20px;">
               Remember: Focus on accuracy
             </p>
           </div>
@@ -1345,14 +1305,14 @@
     return {
       type: jsPsychHtmlButtonResponse,
       stimulus: `
-        <div class="instruction-text" style="max-width: 600px; margin: 0 auto;">
-          <h2 class="instruction-heading">Break Time</h2>
+        <div style="max-width: 600px; margin: 0 auto; font-size: 20px;">
+          <h2>Break Time</h2>
           <p>You have completed <strong>${blockNum * BREAK_INTERVAL}</strong> out of ${NUM_EXPERIMENTAL_TRIALS} trials.</p>
           <p>Block ${blockNum} of ${totalBlocks} complete.</p>
           <p style="margin: 30px 0;">
             Take a short break if you need one. When you're ready, click continue to proceed.
           </p>
-          <p class="instruction-text-small" style="color: #666;">
+          <p style="font-size: 16px; color: #666;">
             Remember: Focus on accuracy rather than speed
           </p>
         </div>
@@ -1514,27 +1474,31 @@
         question_type: 'letter_discrimination',
         is_practice: true
       });
+      
       const totalPractice = practiceResponses.count();
       const correctPractice = practiceResponses.filter({letter_discrimination_correct: true}).count();
       const accuracy = totalPractice > 0 ? Math.round((correctPractice / totalPractice) * 100) : 0;
+      
       return `
-        <div class="instruction-text" style="max-width: 600px; margin: 0 auto;">
-          <h2 class="instruction-heading">Practice Phase Complete!</h2>
+        <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+          <h2>Practice Phase Complete!</h2>
           <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>Your Practice Performance</h3>
-            <p style="font-size: 32px; font-weight: bold; color: ${accuracy >= 70 ? '#28a745' : '#ffc107'};">
+            <p style="font-size: 24px; font-weight: bold; color: ${accuracy >= 70 ? '#28a745' : '#ffc107'};">
               ${accuracy}% Correct
             </p>
             <p>${correctPractice} out of ${totalPractice} trials correct</p>
           </div>
           <p>You will now begin the main experiment with <strong>${NUM_EXPERIMENTAL_TRIALS} trials</strong>, it will take about 30 minutes.</p>
+
           <p><strong>Remember:</strong></p>
           <ul style="text-align: left; display: inline-block;">
             <li>Take your time - try to provide the most accurate responses</li>
             <li>Focus on both the letters and the background images</li>  
             <li>You'll have breaks every ${BREAK_INTERVAL} trials</li>
           </ul>
-          <h2 class="instruction-subheading">Good Luck! 🍀✨</h2>
+
+          <h2>Good Luck! 🍀✨</h2>
         </div>
       `;
     },
@@ -1651,22 +1615,26 @@
         question_type: 'letter_discrimination',
         is_practice: false
       });
+      
       const totalTrials = allResponses.count();
       const correctTrials = allResponses.filter({letter_discrimination_correct: true}).count();
       const accuracy = totalTrials > 0 ? Math.round((correctTrials / totalTrials) * 100) : 0;
+      
       return `
-        <div class="instruction-text" style="max-width: 600px; margin: 0 auto;">
-          <h2 class="instruction-heading">Experiment Complete!</h2>
+        <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+          <h2>Experiment Complete!</h2>
           <p>Thank you for your participation.</p>
+          
           <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3>Your Final Performance</h3>
-            <p style="font-size: 32px; font-weight: bold; color: #28a745;">
+            <p style="font-size: 24px; font-weight: bold; color: #28a745;">
               ${accuracy}% Correct
             </p>
             <p>${correctTrials} out of ${totalTrials} trials correct</p>
           </div>
+          
           <p>You completed <strong>${NUM_EXPERIMENTAL_TRIALS}</strong> trials successfully.</p>
-          <p class="instruction-text-small" style="color: #666;">
+          <p style="font-size: 16px; color: #666;">
             Your data will be automatically downloaded when you click finish.
           </p>
         </div>
@@ -1699,13 +1667,12 @@
       {
         type: jsPsychCallFunction,
         func: function() {
-          clearGlobalDisplayState();
           pixelsPerDegree = 50;
           imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
           letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
           viewingDistance = 60;
           distanceCalibrationAttempts = 0;
-          console.log("CALIBRATION RESET: cleared transforms; pixelsPerDegree set to", pixelsPerDegree);
+          console.log("CALIBRATION RESET: pixelsPerDegree set to", pixelsPerDegree);
         }
       },
       createVirtualChinrest(),
@@ -1738,463 +1705,102 @@
     }
   };
 
-  // ZOOM ENFORCEMENT FUNCTIONS DISABLED
-  // Helper: create a zoom enforcement node to be inserted before every trial
-  // function createZoomEnforcementNode() {
-  //   return createZoomWarningLoopNode();
-  // }
-
-  // Helper: wrap a trial with zoom enforcement before it
-  // function withZoomEnforcement(trial) {
-  //   return [createZoomEnforcementNode(), trial];
-  // }
-
-  // Patch timeline construction to insert zoom enforcement before every trial
-  // function wrapTimelineWithZoomEnforcement(timeline) {
-  //   // Recursively wrap all trials and sub-timelines
-  //   return timeline.flatMap(item => {
-  //     if (Array.isArray(item.timeline)) {
-  //       // It's a timeline node
-  //       return [{
-  //         ...item,
-  //         timeline: wrapTimelineWithZoomEnforcement(item.timeline)
-  //       }];
-  //     } else {
-  //       // It's a single trial
-  //       return withZoomEnforcement(item);
-  //     }
-  //   });
-  // }
-
-  // ===== MAIN TIMELINE FACTORY (for restart) =====
-  function getMainTimeline() {
-    const baseTimeline = [
-      {
-        type: jsPsychCallFunction,
-        func: function() {
-          jsPsych.data.addProperties({
-            experiment_start_time: new Date().toISOString(),
-            experiment_version: 'letter_discrimination_pilot_letters_200',
-            num_practice_trials: NUM_PRACTICE_TRIALS,
-            num_experimental_trials: NUM_EXPERIMENTAL_TRIALS,
-            break_interval: BREAK_INTERVAL,
-            letter_size_visual_angle: LETTER_SIZE_VISUAL_ANGLE,
-            image_display_visual_angle: imageDisplayVisualAngle,
-            l_vertical_position_percent: L_VERTICAL_POSITION_PERCENT,
-            t_probability: T_PROBABILITY,
-            min_distance_cm: MIN_DISTANCE_CM,
-            max_distance_cm: MAX_DISTANCE_CM,
-            experiment_restart_count: experimentRestartCount,
-            browser_info: {
-              user_agent: navigator.userAgent,
-              screen_resolution: `${screen.width}x${screen.height}`,
-              window_size: `${window.innerWidth}x${window.innerHeight}`,
-              device_pixel_ratio: window.devicePixelRatio
-            }
-          });
-        },
-        data: { keep: false }
-      },
-      // createZoomInstructionLoopNode(), // ZOOM CONTROL DISABLED
-      enter_fullscreen,
-      {
-        timeline: [
-          createZoomInstructionLoopNode(),
-          distance_calibration_loop,
-          calibration_check,
-          preload_images,
-          edge_number_instructions,
-          edgeNumberValidationLoop()
-        ],
-        loop_function: function() {
-          const lastFlag = jsPsych.data.get().values().findLast(x => x.edge_test_restart_needed !== undefined);
-          if (lastFlag && lastFlag.edge_test_restart_needed) {
-            experimentRestartCount++;
-            resetAllCalibrationParameters();
-            jsPsych.data.addProperties({ experiment_restart_count: experimentRestartCount });
-            jsPsych.data.addProperties({ edge_test_restart_needed: false });
-            jsPsych.endExperiment('Experiment restarted due to image size test failure.');
-            setTimeout(() => { jsPsych.run(getMainTimeline()); }, 100);
-            return false;
+  // ========== MAIN TIMELINE ==========
+  const main_timeline = [
+    {
+      type: jsPsychCallFunction,
+      func: function() {
+        // ZOOM INITIALIZATION DISABLED
+        // Initialize zoom state at the very beginning
+        // initialZoomState = getZoomLevel();
+        // console.log('Initial zoom state set to:', initialZoomState);
+        
+        // Add experiment metadata
+        jsPsych.data.addProperties({
+          experiment_start_time: new Date().toISOString(),
+          experiment_version: 'letter_discrimination_v2.0',
+          num_practice_trials: NUM_PRACTICE_TRIALS,
+          num_experimental_trials: NUM_EXPERIMENTAL_TRIALS,
+          break_interval: BREAK_INTERVAL,
+          letter_size_visual_angle: LETTER_SIZE_VISUAL_ANGLE,
+          image_display_visual_angle: imageDisplayVisualAngle,
+          l_vertical_position_percent: L_VERTICAL_POSITION_PERCENT,
+          t_probability: T_PROBABILITY,
+          min_distance_cm: MIN_DISTANCE_CM,
+          max_distance_cm: MAX_DISTANCE_CM,
+          // initial_zoom_level: initialZoomState, // DISABLED
+          browser_info: {
+            user_agent: navigator.userAgent,
+            screen_resolution: `${screen.width}x${screen.height}`,
+            window_size: `${window.innerWidth}x${window.innerHeight}`,
+            device_pixel_ratio: window.devicePixelRatio
           }
-          return false;
-        }
+        });
       },
-      instructions,
-      slow_down_trial_demo,
-      practice_instructions,
-      ...practice_trials,
-      practice_complete,
-      ...experimental_blocks,
-      finish_experiment
-    ];
-    // ZOOM ENFORCEMENT DISABLED
-    // Insert zoom enforcement before every trial (except the initial zoom instruction and fullscreen)
-    // We'll skip the first three nodes (callFunction, zoom instruction, fullscreen), and wrap the rest
-    // const prefix = baseTimeline.slice(0, 3);
-    // const rest = baseTimeline.slice(3);
-    // return [
-    //   ...prefix,
-    //   ...wrapTimelineWithZoomEnforcement(rest)
-    // ];
-    return baseTimeline;
-  }
-
-  // ====== PATCH DISTANCE VALIDATION TO FORCE FULL RESTART IF OUT OF RANGE =====
-  distance_validation.on_finish = function(data) {
-    data.viewing_distance_cm = viewingDistance;
-    data.distance_within_range = viewingDistance >= MIN_DISTANCE_CM && viewingDistance <= MAX_DISTANCE_CM;
-    data.calibration_attempt = distanceCalibrationAttempts + 1;
-    if (!data.distance_within_range) {
-      // Full experiment restart
-      experimentRestartCount++;
-      clearGlobalDisplayState();
-      resetAllCalibrationParameters();
-      jsPsych.data.addProperties({ experiment_restart_count: experimentRestartCount });
-      jsPsych.endExperiment('Experiment restarted due to distance out of range.');
-      setTimeout(() => { jsPsych.run(getMainTimeline()); }, 100);
-    }
-  };
-
-  // ====== PATCH EDGE NUMBER VALIDATION LOOP TO FORCE FULL RESTART ON FAILURE =====
-  function edgeNumberValidationLoop() {
-    let attempt = 1;
-    let edgeNumbers = generateEdgeNumbers();
-    let restartNeeded = false;
-    let edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
-    return {
+      data: { keep: false }
+    },
+    // consent_form,
+    // participant_info_questions,
+    // initial_instructions,
+    // ZOOM CHECK DISABLED
+    // {
+    //   timeline: [createInitialZoomCheck()],
+    //   loop_function: function() {
+    //     return !isZoom100();
+    //   }
+    // },
+    enter_fullscreen,
+    // Combined calibration and edge number validation loop
+    {
       timeline: [
-        { timeline: [edgeTrial], conditional_function: function() { return !restartNeeded; } },
-        { timeline: [createEdgeRestartPromptScreen()], conditional_function: function() { return restartNeeded; } }
-      ],
-      loop_function: function(data) {
-        const resp = data.values()[0];
-        if (restartNeeded) {
-          restartNeeded = false;
-          attempt = 1;
-          edgeNumbers = generateEdgeNumbers();
-          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
-          return false;
-        }
-        if (
-          resp.fail ||
-          (attempt >= 3 && JSON.stringify(resp.user_entries) !== JSON.stringify(edgeNumbers.map(String)))
-        ) {
-          // Full experiment restart
-          experimentRestartCount++;
-          resetAllCalibrationParameters();
-          jsPsych.data.addProperties({ experiment_restart_count: experimentRestartCount });
-          jsPsych.endExperiment('Experiment restarted due to image size test failure.');
-          setTimeout(() => { jsPsych.run(getMainTimeline()); }, 100);
-          return false;
-        }
-        if (JSON.stringify(resp.user_entries) === JSON.stringify(edgeNumbers.map(String))) {
-          jsPsych.data.addProperties({ edge_test_restart_needed: false });
-          attempt = 1;
-          edgeNumbers = generateEdgeNumbers();
-          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
-          return false;
-        }
-        attempt++;
-        return true;
-      }
-    };
-  }
-
-  // ====== MAIN TIMELINE LAUNCH =====
-  jsPsych.run(getMainTimeline());
-
-  // ===== ZOOM CONTROL UTILITIES DISABLED =====
-  // let initialZoomState = null;
-
-  // Returns the browser zoom as a percentage (ignores system scaling)
-  // function getZoomLevel() {
-  //   const ratio = window.outerWidth / window.innerWidth;
-  //   let zoom = Math.round(ratio * 100);
-  //   if (zoom < 10 || zoom > 500) zoom = 100; // fallback
-  //   return zoom;
-  // }
-
-  // function getCurrentZoom() {
-  //   return getZoomLevel();
-  // }
-
-  // Returns true if zoom is within 99-101%
-  // function isZoom100() {
-  //   const zoom = getZoomLevel();
-  //   return zoom >= 99 && zoom <= 101;
-  // }
-
-  // Returns true if zoom has changed from initialZoomState by more than 3%
-  // function hasZoomChanged() {
-  //   if (initialZoomState === null) return false;
-  //   const currentZoom = getZoomLevel();
-  //   return Math.abs(currentZoom - initialZoomState) > 3;
-  // }
-
-  // Helper to get display zoom (show 100% for 99-101%)
-  // function getDisplayZoom() {
-  //   const z = getZoomLevel();
-  //   return (z >= 99 && z <= 101) ? 100 : z;
-  // }
-
-  // ZOOM INSTRUCTION SCREEN DISABLED
-  // Enhanced pre-calibration zoom instruction screen with more education
-  // function createZoomInstructionScreen() {
-  //   return {
-  //     type: jsPsychHtmlButtonResponse,
-  //     stimulus: function() {
-  //       const currentZoom = getZoomLevel();
-  //       const displayZoom = getDisplayZoom();
-  //       const isCorrectZoom = isZoom100();
-  //       if (isCorrectZoom) {
-  //         return `
-  //           <div style="max-width: 600px; margin: 0 auto; font-size: 22px;">
-  //             <h3 style="color: #28a745;">✓ Browser Zoom Correct</h3>
-  //             <p>Your browser zoom is at <strong>${displayZoom}%</strong> - perfect!</p>
-  //             <p>You can continue with the experiment.</p>
-  //           </div>
-  //         `;
-  //       } else {
-  //         return `
-  //           <div style="max-width: 600px; margin: 0 auto; font-size: 22px;">
-  //             <h3 style="color: #dc3545;">⚠ Browser Zoom Must Be 100%</h3>
-  //             <p>Your current browser zoom: <strong>${displayZoom}%</strong></p>
-  //             <p>Required zoom: <strong>100%</strong></p>
-  //             <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-  //               <p><strong>How to fix this:</strong></p>
-  //               <ul style="text-align: left; margin: 10px 0;">
-  //                 <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac) to reset zoom instantly.</li>
-  //                 <li>Or go to your browser menu and select "Zoom" → "Reset to 100%".</li>
-  //                 <li>Or use <strong>Ctrl+Mouse Wheel</strong> (or <strong>Cmd+Mouse Wheel</strong> on Mac) to adjust zoom.</li>
-  //                 <li>On some laptops, you may need to use the trackpad gesture (pinch to zoom) to adjust.</li>
-  //                 <li>If you are using a browser in a language other than English, look for the zoom option in the menu (often marked with a % sign).</li>
-  //                 <li>If you are stuck, try searching online for "how to set browser zoom to 100%" for your browser.</li>
-  //               </ul>
-  //             </div>
-  //             <p>After adjusting your zoom, click the button below to check again.</p>
-  //           </div>
-  //         `;
-  //       }
-  //     },
-  //     choices: function() {
-  //       return isZoom100() ? ['Continue'] : ['Check Zoom Again'];
-  //     },
-  //     data: {
-  //       trial_type: 'initial_zoom_check',
-  //       keep: true
-  //     },
-  //     on_finish: function(data) {
-  //       const zoom = getZoomLevel();
-  //       data.browser_zoom_percent = getDisplayZoom();
-  //       data.zoom_correct = isZoom100();
-  //       if (isZoom100() && initialZoomState === null) {
-  //         initialZoomState = zoom;
-  //       }
-  //     }
-  //   };
-  // }
-
-  // ZOOM WARNING SCREEN DISABLED
-  // Mid-experiment zoom warning popup (blocking)
-  // function createZoomWarningScreen() {
-  //   return {
-  //     type: jsPsychHtmlButtonResponse,
-  //     stimulus: function() {
-  //       const currentZoom = getZoomLevel();
-  //       const displayZoom = getDisplayZoom();
-  //       return `
-  //         <div style="max-width: 600px; margin: 0 auto; font-size: 22px;">
-  //           <h3 style="color: #dc3545;">⚠ Browser Zoom Changed</h3>
-  //           <p>Your browser zoom is now <strong>${displayZoom}%</strong>.</p>
-  //           <p>For accurate results, you <b>must</b> reset your browser zoom to <strong>100%</strong> before continuing.</p>
-  //           <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-  //             <p><strong>How to fix this:</strong></p>
-  //             <ul style="text-align: left; margin: 10px 0;">
-  //               <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac) to reset zoom instantly.</li>
-  //               <li>Or go to your browser menu and select "Zoom" → "Reset to 100%".</li>
-  //               <li>Or use <strong>Ctrl+Mouse Wheel</strong> (or <strong>Cmd+Mouse Wheel</strong> on Mac) to adjust zoom.</li>
-  //               <li>On some laptops, you may need to use the trackpad gesture (pinch to zoom) to adjust.</li>
-  //               <li>If you are using a browser in a language other than English, look for the zoom option in the menu (often marked with a % sign).</li>
-  //               <li>If you are stuck, try searching online for "how to set browser zoom to 100%" for your browser.</li>
-  //             </ul>
-  //           </div>
-  //           <p>After adjusting your zoom, click the button below to check again.</p>
-  //         </div>
-  //       `;
-  //     },
-  //     choices: function() {
-  //       return isZoom100() ? ['Continue'] : ['Check Zoom Again'];
-  //     },
-  //     data: {
-  //       trial_type: 'zoom_warning',
-  //       keep: true
-  //     },
-  //     on_finish: function(data) {
-  //       const zoom = getZoomLevel();
-  //       data.browser_zoom_percent = getDisplayZoom();
-  //       data.zoom_correct = isZoom100();
-  //       data.zoom_warning_triggered = true;
-  //       if (isZoom100() && initialZoomState !== null) {
-  //         initialZoomState = zoom; // reset baseline to new value
-  //       }
-  //     }
-  //   };
-  // }
-
-  // ========== ZOOM MONITORING DISABLED ==========
-  // Helper to wrap on_finish to always add zoom info and trigger warning if needed
-  // function defaultOnFinish(orig) {
-  //   return function(data) {
-  //     if (typeof orig === 'function') orig.call(this, data);
-  //     data.browser_zoom_percent = getCurrentZoom();
-  //     data.zoom_changed = hasZoomChanged();
-  //     // If zoom changed, trigger warning popup before next trial
-  //     if (hasZoomChanged()) {
-  //       jsPsych.addNodeToEndOfTimeline(createZoomWarningLoopNode());
-  //       data.zoom_warning_triggered = true;
-  //     } else {
-  //       data.zoom_warning_triggered = false;
-  //     }
-  //   };
-  // }
-
-  // Helper: loop node for zoom check (blocks until zoom is 100%)
-  // function createZoomInstructionLoopNode() {
-  //   return {
-  //     timeline: [createZoomInstructionScreen()],
-  //     loop_function: function(data) {
-  //       // Only proceed if zoom is correct
-  //       const last = data.values()[0];
-  //       return !(last && last.zoom_correct === true);
-  //     }
-  //   };
-  // }
-
-  // function createZoomWarningLoopNode() {
-  //   return {
-  //     timeline: [createZoomWarningScreen()],
-  //     loop_function: function(data) {
-  //       const last = data.values()[0];
-  //       return !(last && last.zoom_correct === true);
-  //     }
-  //   };
-  // }
-
-  // ===== ZOOM CONTROL UTILITIES (ENABLED FOR STRICT CHECK) =====
-  function getZoomLevel() {
-    const ratio = window.outerWidth / window.innerWidth;
-    let zoom = Math.round(ratio * 100);
-    if (zoom < 10 || zoom > 500) zoom = 100; // fallback
-    return zoom;
-  }
-
-  function getDisplayZoom() {
-    const z = getZoomLevel();
-    return (z >= 99 && z <= 101) ? 100 : z;
-  }
-
-  function isZoom100Strict() {
-    const z = getZoomLevel();
-    return z >= 99 && z <= 101;
-  }
-
-  function createZoomInstructionScreen() {
-    return {
-      type: jsPsychHtmlButtonResponse,
-      stimulus: function() {
-        const currentZoom = getDisplayZoom();
-        return `
-          <div style="max-width: 700px; margin: 0 auto; font-size: 20px; line-height: 1.6;">
-            <h3 style="color: #dc3545;">⚠ Browser Zoom Must Be 100%</h3>
-            <p>Your current browser zoom: <strong>${currentZoom}%</strong></p>
-            <p>Required zoom: <strong>100%</strong></p>
-            <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <p><strong>How to fix this:</strong></p>
-              <ul style="text-align: left; margin: 10px 0;">
-                <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac) to reset zoom instantly.</li>
-                <li>Or go to your browser menu and select "Zoom" → "Reset to 100%".</li>
-                <li>Or use <strong>Ctrl+Mouse Wheel</strong> (or <strong>Cmd+Mouse Wheel</strong> on Mac) to adjust zoom.</li>
-              </ul>
-            </div>
-            <p>After adjusting your zoom, click the button below to check again.</p>
-          </div>
-        `;
-      },
-      choices: function() {
-        return isZoom100Strict() ? ['Continue'] : ['Check Zoom Again'];
-      },
-      data: {
-        trial_type: 'initial_zoom_check',
-        keep: true
-      },
-      on_finish: function(data) {
-        data.browser_zoom_percent = getDisplayZoom();
-        data.zoom_correct = isZoom100Strict();
-      }
-    };
-  }
-
-  function createZoomInstructionLoopNode() {
-    return {
-      timeline: [
-        {
-          timeline: [createZoomInstructionScreen()],
-          conditional_function: function() {
-            return !isZoom100Strict();
-          }
-        },
-        {
-          timeline: [createGoodZoomScreen()],
-          conditional_function: function() {
-            return isZoom100Strict();
-          }
-        }
+        distance_calibration_loop,
+        calibration_check,
+        preload_images,
+        edge_number_instructions,
+        edgeNumberValidationLoop()
       ],
       loop_function: function() {
-        return !isZoom100Strict();
-      }
-    };
-  }
-
-  function createGoodZoomScreen() {
-    return {
-      type: jsPsychHtmlButtonResponse,
-      stimulus: function() {
-        const currentZoom = getDisplayZoom();
-        return `
-          <div style=\"max-width: 700px; margin: 0 auto; font-size: 20px; line-height: 1.6;\">
-            <h3 style=\"color: #28a745;\">✓ Browser Zoom Correct</h3>
-            <p>Your browser zoom is at <strong>${currentZoom}%</strong> - perfect!</p>
-            <p>You can continue with the experiment.</p>
-          </div>
-        `;
-      },
-      choices: ['Continue'],
-      data: { trial_type: 'zoom_ok', keep: true }
-    };
-  }
-
-  // ====== INSERT ZOOM CHECK BEFORE CALIBRATION =====
-
-  // ===== DISPLAY RESET UTILITIES =====
-  function clearGlobalDisplayState() {
-    try {
-      const content = document.getElementById('jspsych-content');
-      if (content) {
-        content.style.transform = '';
-        content.style.transformOrigin = '';
-      }
-      const wrappers = document.getElementsByClassName('jspsych-content-wrapper');
-      if (wrappers && wrappers.length) {
-        for (let i = 0; i < wrappers.length; i++) {
-          wrappers[i].style.transform = '';
-          wrappers[i].style.transformOrigin = '';
+        // Check for restart flag
+        const lastFlag = jsPsych.data.get().values().findLast(x => x.edge_test_restart_needed !== undefined);
+        if (lastFlag && lastFlag.edge_test_restart_needed) {
+          // Reset params (important!)
+          pixelsPerDegree = 50;
+          imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+          letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+          viewingDistance = 60;
+          distanceCalibrationAttempts = 0;
+          // Clear flag so infinite loop can't happen
+          jsPsych.data.addProperties({ edge_test_restart_needed: false });
+          return true; // restart calibration
         }
+        return false; // proceed
       }
-      document.body.style.zoom = '';
-    } catch (e) { /* noop */ }
-  }
+    },
 
+    instructions,
+    // ZOOM CHECK DISABLED
+    // {
+    //   timeline: [createZoomCheck()],
+    //   loop_function: function() {
+    //     return hasZoomChanged();
+    //   }
+    // },
+    slow_down_trial_demo,
+    practice_instructions,
+    ...practice_trials,
+    practice_complete,
+    // ZOOM CHECK DISABLED
+    // {
+    //   timeline: [createZoomCheck()],
+    //   loop_function: function() {
+    //     return hasZoomChanged();
+    //   }
+    // },
+    ...experimental_blocks,
+    finish_experiment
+  ];
+
+  // ========== RUN EXPERIMENT ==========
+  jsPsych.run(main_timeline);
 </script>
 </html>
