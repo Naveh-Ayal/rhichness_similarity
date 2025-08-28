@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Letter Discrimination & Image Similarity Experiment</title>
+  <!-- jsPsych and plugins -->
+  <script src="jspsych/dist/jspsych.js"></script>
+  <script src="jspsych/dist/plugin-html-keyboard-response.js"></script>
+  <script src="jspsych/dist/plugin-instructions.js"></script>
+  <script src="jspsych/dist/plugin-html-button-response.js"></script>
+  <script src="jspsych/dist/plugin-image-keyboard-response.js"></script>
+  <script src="jspsych/dist/plugin-survey-multi-choice.js"></script>
+  <script src="jspsych/dist/plugin-survey-html-form.js"></script>
+  <script src="jspsych/dist/plugin-preload.js"></script>
+  <script src="jspsych/dist/plugin-fullscreen.js"></script>
+  <script src="jspsych/dist/plugin-virtual-chinrest.js"></script>
+  <script src="jspsych/dist/plugin-call-function.js"></script>
+  <link rel="stylesheet" href="jspsych/dist/jspsych.css" />
+  <style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        font-family: Arial, sans-serif;
+        overflow: hidden;
+    }
+    .jspsych-display-element {
+        width: 100vw !important;
+        height: 100vh !important;
+        min-width: 100vw !important;
+        min-height: 100vh !important;
+        box-sizing: border-box;
+    }
+    .jspsych-content {
+        max-width: 100% !important;
+        text-align: center;
+    }
+    .image-with-letter {
+        position: relative;
+        display: inline-block;
+    }
+    .overlay-letter {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 10;
+    }
+    
+    /* Clean and consistent form input styling */
+    input[type="text"],
+    input[type="number"],
+    select {
+        border: 1px solid #ccc;
+        padding: 6px 8px;
+        font-size: 16px;
+        border-radius: 4px;
+        box-sizing: border-box;
+        background-color: white;
+        width: 250px;
+        text-align: center;
+    }
+    
+    /* Clean spacing between survey form questions */
+    .jspsych-survey-html-form p {
+        margin-bottom: 12px;
+    }
+    
+    /* Timeline diagram styling */
+    .timeline-diagram {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 20px 0;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .timeline-step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px;
+        background-color: white;
+        border-radius: 6px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        min-width: 80px;
+    }
+    
+    .timeline-arrow {
+        font-size: 20px;
+        color: #666;
+        margin: 0 5px;
+    }
+    
+    /* Hide cursor during non-interactive periods */
+    .hide-cursor {
+        cursor: none !important;
+    }
+    
+    /* Improved similarity rating styling */
+    .similarity-rating {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+        margin: 20px 0;
+    }
+    
+    .similarity-option {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0 10px;
+    }
+    
+    .similarity-option input[type="radio"] {
+        width: 20px;
+        height: 20px;
+        margin-bottom: 5px;
+    }
+    
+    .similarity-label {
+        font-size: 14px;
+        text-align: center;
+    }
+  </style>
+</head>
+<body></body>
+<script>
+  // ===== PARAMETERS =====
+  const NUM_PRACTICE_TRIALS = 12;
+  const NUM_EXPERIMENTAL_TRIALS = 200;
+  const BREAK_INTERVAL = 40; // Break every 40 trials
+  const imageDisplayVisualAngle = 26;
+  const LETTER_SIZE_VISUAL_ANGLE = 1;
+  const L_VERTICAL_POSITION_PERCENT = 20;
+  const T_PROBABILITY = 0.5;
+  const MIN_DISTANCE_CM = 40;
+  const MAX_DISTANCE_CM = 100;
+  
+  // *** UPDATED: Set based on actual number of available images ***
+  // Updated after running the rename script
+  const AVAILABLE_MAIN_IMAGES = 400; // Images available: image_001.jpg to image_400.jpg
+  
+  let pixelsPerDegree = 50;
+  let imageHeight = 0;
+  let letterSizePx = 0;
+  let viewingDistance = 0;
+  let globalTrialCounter = 0;
+  let currentBlockNumber = 0;
+  let distanceCalibrationAttempts = 0;
+
+  // --- Define your mask files ---
+  const NUM_MASKS = 30;
+  const maskFiles = Array.from({length: NUM_MASKS}, (_, i) =>
+    `stimuli/masks/mask_${String(i + 1).padStart(2, '0')}.jpg`
+  );
+
+  // ===== JSPSYCH INIT =====
+  const jsPsych = initJsPsych({
+    on_finish: () => {
+      // Exit fullscreen and show cursor
+      document.exitFullscreen?.();
+      document.body.style.cursor = 'auto';
+      
+      // Download the data when experiment ends
+      const cleanedData = jsPsych.data.get().filterCustom(trial => trial.keep !== false);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      cleanedData.localSave('csv', `letter_discrimination_similarity_data_${timestamp}.csv`);
+    }
+  });
+
+  // ===== UTILITY FUNCTIONS =====
+  function hideMouseCursor() {
+    document.body.style.cursor = 'none';
+  }
+  
+  function showMouseCursor() {
+    document.body.style.cursor = 'auto';
+  }
+
+  // ZOOM DETECTION TEMPORARILY DISABLED
+  // Store initial zoom state when experiment starts
+  // let initialZoomState = null;
+  
+  // Use browser zoom detection that ignores system scaling
+  // function getZoomLevel() {
+  //   // Use outerWidth/innerWidth method which detects actual browser zoom
+  //   // This ignores system display scaling and focuses on browser zoom level
+  //   const ratio = window.outerWidth / window.innerWidth;
+  //   let zoom = Math.round(ratio * 100);
+  //   
+  //   // Handle edge cases where the calculation might be off
+  //   if (zoom < 10 || zoom > 500) {
+  //     zoom = 100; // Default to 100% if calculation seems wrong
+  //   }
+  //   
+  //   return zoom;
+  // }
+
+  // function getCurrentZoom() {
+  //   return getZoomLevel();
+  // }
+
+  // Check if zoom is at 100% with minimal tolerance
+  function isZoom100() {
+    // const zoom = getZoomLevel();
+    // Very tight tolerance - only accept 99-101% as "100%"
+    // return zoom >= 99 && zoom <= 101;
+    return true; // Always return true - zoom check disabled
+  }
+
+  // Only trigger zoom change if there's a significant change from the initial state
+  function hasZoomChanged() {
+    // const currentZoom = getZoomLevel();
+    // 
+    // // If we haven't stored initial state yet, store it now
+    // if (initialZoomState === null) {
+    //   initialZoomState = currentZoom;
+    //   return false; // Don't trigger on first check
+    // }
+    // 
+    // // Only trigger if zoom has changed significantly from initial state
+    // const zoomDifference = Math.abs(currentZoom - initialZoomState);
+    // return zoomDifference > 3; // More than 3% change
+    return false; // Never trigger zoom change - zoom check disabled
+  }
+
+  // ZOOM CHECK FUNCTIONS TEMPORARILY DISABLED
+  // Create zoom check screen - initial version (shows success message)
+  // function createInitialZoomCheck() {
+  //   return {
+  //     type: jsPsychHtmlButtonResponse,
+  //     stimulus: function() {
+  //       const currentZoom = getCurrentZoom();
+  //       const isCorrectZoom = isZoom100();
+  //       
+  //       if (isCorrectZoom) {
+  //         return `
+  //           <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+  //             <h3 style="color: #28a745;">✓ Browser Zoom Correct</h3>
+  //             <p>Your browser zoom is at <strong>${currentZoom}%</strong> - perfect!</p>
+  //             <p>You can continue with the experiment.</p>
+  //           </div>
+  //         `;
+  //       } else {
+  //         return `
+  //           <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+  //             <h3 style="color: #dc3545;">⚠ Browser Zoom Must Be 100%</h3>
+  //             <p>Your current browser zoom: <strong>${currentZoom}%</strong></p>
+  //             <p>Required zoom: <strong>100%</strong></p>
+  //             <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+  //               <p><strong>How to fix this:</strong></p>
+  //               <ul style="text-align: left; margin: 10px 0;">
+  //                 <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac)</li>
+  //                 <li>Or go to your browser menu and select "Zoom" → "Reset to 100%"</li>
+  //                 <li>Or use <strong>Ctrl+Mouse Wheel</strong> to adjust zoom</li>
+  //               </ul>
+  //             </div>
+  //             <p>After adjusting your zoom, click the button below to check again.</p>
+  //           </div>
+  //         `;
+  //       }
+  //     },
+  //     choices: function() {
+  //       return isZoom100() ? ['Continue'] : ['Check Zoom Again'];
+  //     },
+  //     data: {
+  //       trial_type: 'initial_zoom_check',
+  //       keep: true
+  //     },
+  //     on_finish: function(data) {
+  //       data.browser_zoom_percent = getCurrentZoom();
+  //       data.zoom_correct = isZoom100();
+  //     }
+  //   };
+  // }
+
+  // Create zoom check screen - popup version (no success message)
+  // function createZoomCheck() {
+  //   return {
+  //     type: jsPsychHtmlButtonResponse,
+  //     stimulus: function() {
+  //       const currentZoom = getCurrentZoom();
+  //       
+  //       return `
+  //         <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+  //           <h3 style="color: #dc3545;">⚠ Browser Zoom Changed</h3>
+  //           <p>Your current browser zoom: <strong>${currentZoom}%</strong></p>
+  //           <p>Required zoom: <strong>100%</strong></p>
+  //           <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+  //             <p><strong>Please reset your zoom to 100%:</strong></p>
+  //             <ul style="text-align: left; margin: 10px 0;">
+  //               <li>Press <strong>Ctrl+0</strong> (Windows/Linux) or <strong>Cmd+0</strong> (Mac)</li>
+  //               <li>Or go to your browser menu and select "Zoom" → "Reset to 100%"</li>
+  //               <li>Or use <strong>Ctrl+Mouse Wheel</strong> to adjust zoom</li>
+  //             </ul>
+  //           </div>
+  //           <p>After adjusting your zoom, click the button below to continue.</p>
+  //         </div>
+  //       `;
+  //     },
+  //     choices: ['Check Zoom Again'],
+  //     data: {
+  //       trial_type: 'zoom_check',
+  //       keep: true
+  //     },
+  //     on_finish: function(data) {
+  //       data.browser_zoom_percent = getCurrentZoom();
+  //       data.zoom_correct = isZoom100();
+  //     }
+  //   };
+  // }
+
+  function generateLetter() {
+    return Math.random() < T_PROBABILITY ? 'T' : 'L';
+  }
+
+  function generateRotation() {
+    return Math.floor(Math.random() * 360);
+  }
+
+  function createImageWithLetter(imagePath, letter, rotation) {
+    const fontSize = letterSizePx;
+    
+    let letterElement = '';
+    if (letter === 'T') {
+      letterElement = `
+        <div class="overlay-letter" style="transform: translate(-50%, -50%) rotate(${rotation}deg);">
+          <svg width="${fontSize}" height="${fontSize}" viewBox="0 0 100 100">
+            <rect x="46" y="15" width="12" height="70" fill="black" stroke="white" stroke-width="8"/>
+            <rect x="15" y="15" width="70" height="12" fill="black" stroke="white" stroke-width="8"/>
+          </svg>
+        </div>
+      `;
+    } else if (letter === 'L') {
+      const horizontalStart = 15;
+      const horizontalEnd = 85;
+      const horizontalWidth = horizontalEnd - horizontalStart;
+      const verticalX = horizontalStart + (horizontalWidth * L_VERTICAL_POSITION_PERCENT / 100) - 4;
+      letterElement = `
+        <div class="overlay-letter" style="transform: translate(-50%, -50%) rotate(${rotation}deg);">
+          <svg width="${fontSize}" height="${fontSize}" viewBox="0 0 100 100">
+            <rect x="${verticalX}" y="15" width="12" height="60" fill="black" stroke="white" stroke-width="8"/>
+            <rect x="${horizontalStart}" y="75" width="${horizontalWidth}" height="12" fill="black" stroke="white" stroke-width="8"/>
+          </svg>
+        </div>
+      `;
+    }
+    
+    return `
+      <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+        <div class="image-with-letter">
+          <img src="${imagePath}" style="height: ${imageHeight}px;" />
+          ${letterElement}
+        </div>
+      </div>
+    `;
+  }
+
+  // ===== BALANCED TRIAL GENERATION =====
+  function generateBalancedTrials(numTrials, isPractice = false) {
+    const trials = [];
+    
+    let allImages = [];
+    
+    if (isPractice) {
+      // *** UPDATED: Use practice images from their respective folders ***
+      // Practice regular images (will be used for some practice trials)
+      const practiceRegularImages = [
+        'stimuli/pictures/practice_regular/000000466041.jpg',
+        'stimuli/pictures/practice_regular/000000481412.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_03.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_04.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_05.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_06.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_07.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_08.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_09.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_10.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_11.jpg',
+        'stimuli/pictures/practice_regular/practice_image_reg_12.jpg'
+      ];
+      
+      // Practice similar images (will be used for some practice trials)  
+      const practiceSimilarImages = [
+        'stimuli/pictures/practice_similar/000000553312.jpg',
+        'stimuli/pictures/practice_similar/000000548450.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_03.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_04.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_05.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_06.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_07.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_08.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_09.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_10.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_11.jpg',
+        'stimuli/pictures/practice_similar/practice_image_sim_12.jpg'
+      ];
+      
+      // Combine practice images
+      allImages = [...practiceRegularImages, ...practiceSimilarImages];
+    } else {
+      // *** UPDATED: Use main experimental images with new naming scheme ***
+      for (let i = 1; i <= AVAILABLE_MAIN_IMAGES; i++) {
+        allImages.push(`stimuli/pictures/image_${String(i).padStart(3, '0')}.jpg`);
+      }
+    }
+    
+    // Shuffle images to ensure random selection
+    const shuffledImages = [...allImages].sort(() => Math.random() - 0.5);
+    
+    // Calculate balanced conditions
+    const numSame = Math.floor(numTrials / 2);
+    const numDifferent = numTrials - numSame;
+    const numT = Math.floor(numTrials / 2);
+    const numL = numTrials - numT;
+    
+    // Create condition arrays
+    const letterConditions = [];
+    const sameConditions = [];
+    
+    // Add letter conditions
+    for (let i = 0; i < numT; i++) letterConditions.push('T');
+    for (let i = 0; i < numL; i++) letterConditions.push('L');
+    
+    // Add same/different conditions (nested within each letter condition)
+    nSumPerLetter = Math.floor(numSame/2);
+    for (let i = 0; i < nSumPerLetter; i++) sameConditions.push(true);
+    for (let i = 0; i < nSumPerLetter; i++) sameConditions.push(false);
+    for (let i = 0; i < nSumPerLetter; i++) sameConditions.push(true);
+    for (let i = 0; i < nSumPerLetter; i++) sameConditions.push(false);
+    
+    // Shuffle conditions
+    letterConditions.sort(() => Math.random() - 0.5);
+    sameConditions.sort(() => Math.random() - 0.5);
+    
+    // Generate trials
+    const usedImagePairs = new Set();
+    
+    for (let i = 0; i < numTrials; i++) {
+      let image1, image2;
+      let pairKey;
+      
+      // Ensure no repeated image pairs
+      do {
+        const idx1 = Math.floor(Math.random() * shuffledImages.length);
+        let idx2;
+        do {
+          idx2 = Math.floor(Math.random() * shuffledImages.length);
+        } while (idx2 === idx1);
+        
+        image1 = shuffledImages[idx1];
+        image2 = shuffledImages[idx2];
+        pairKey = [image1, image2].sort().join('|');
+      } while (usedImagePairs.has(pairKey));
+      
+      usedImagePairs.add(pairKey);
+      
+      const letter1 = letterConditions[i];
+      const letter2 = sameConditions[i] ? letter1 : (letter1 === 'T' ? 'L' : 'T');
+      
+      // For practice, include some similar pairs using consecutive images
+      if (isPractice && i < numTrials / 2) {
+        // Use consecutive images from practice_similar folder which are more likely to be similar
+        const similarImages = shuffledImages.filter(img => img.includes('practice_similar'));
+        if (similarImages.length > 1) {
+          const baseIdx = Math.floor(Math.random() * (similarImages.length - 1));
+          image1 = similarImages[baseIdx];
+          image2 = similarImages[baseIdx + 1];
+        }
+      }
+      
+      trials.push({
+        image1: image1,
+        image2: image2,
+        letter1: letter1,
+        letter2: letter2,
+        rotation1: generateRotation(),
+        rotation2: generateRotation(),
+        trial_number: i + 1,
+        condition_same_different: sameConditions[i] ? 'same' : 'different',
+        condition_letter1: letter1,
+        condition_letter2: letter2,
+        is_practice: isPractice
+      });
+    }
+    
+    return trials;
+  }
+
+  // ========== INSTRUCTION SCREENS ==========
+  const enter_fullscreen = {
+    type: jsPsychFullscreen,
+    fullscreen_mode: true,
+    message: "<p>The experiment will now begin in fullscreen mode.</p>",
+    data: {
+      trial_type: 'enter_fullscreen',
+      keep: false
+    }
+  };
+
+  // Create virtual chinrest with dynamic pixels_per_unit reset
+  function createVirtualChinrest() {
+    return {
+      type: jsPsychVirtualChinrest,
+      blindspot_reps: 1,
+      resize_units: "deg",
+      pixels_per_unit: function() {
+        // Reset to default (50) on recalibration attempts
+        if (distanceCalibrationAttempts > 0) {
+          return 50;
+        }
+        return 50; // Default value for first attempt
+      },
+      item_path: 'stimuli/credit_card.png',
+      on_start: function() {
+        // Complete reset of all calibration parameters for recalibration attempts
+        if (distanceCalibrationAttempts > 0) {
+          // Reset all display parameters to defaults
+          pixelsPerDegree = 50;
+          imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+          letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+          viewingDistance = 60; // Default estimate
+          
+          console.log(`Distance calibration attempt ${distanceCalibrationAttempts + 1}: Complete parameter reset to defaults`);
+        }
+      },
+      on_finish: function(data) {
+        // const maxPPD = window.innerHeight / 26;
+        const maxPPD = 100000;
+        
+        // Add calibration attempt info
+        data.calibration_attempt = distanceCalibrationAttempts + 1;
+        data.pixels_per_degree_reset = distanceCalibrationAttempts > 0;
+        
+        if (data.px2deg) {
+          const wasClamped = data.px2deg > maxPPD;
+          data.original_pixels_per_degree = data.px2deg;
+          data.pixels_per_degree = Math.min(data.px2deg, maxPPD);
+          data.was_clamped = wasClamped;
+          data.baseline_zoom = Math.round(window.devicePixelRatio * 100);
+          pixelsPerDegree = data.pixels_per_degree;
+          
+          // Calculate viewing distance
+          viewingDistance = data.view_dist_mm / 10; // Convert to cm
+          
+        } else {
+          data.original_pixels_per_degree = 50;
+          data.pixels_per_degree = 50;
+          data.was_clamped = false;
+          data.baseline_zoom = Math.round(window.devicePixelRatio * 100);
+          pixelsPerDegree = 50;
+          viewingDistance = 60; // Default estimate
+        }
+        
+        // Recalculate display parameters with new pixels per degree
+        imageHeight = imageDisplayVisualAngle * pixelsPerDegree;        
+        letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+        
+        // Add comprehensive screen and viewing data
+        data.screen_width = window.screen.width;
+        data.screen_height = window.screen.height;
+        data.window_width = window.innerWidth;
+        data.window_height = window.innerHeight;
+        data.final_image_height_px = imageHeight;
+        data.final_letter_size_px = letterSizePx;
+        data.letter_size_visual_angle = LETTER_SIZE_VISUAL_ANGLE;
+        data.image_display_visual_angle = imageDisplayVisualAngle;
+        data.viewing_distance_cm = viewingDistance;
+        data.keep = true;
+        data.trial_type = 'virtual_chinrest';
+      }
+    };
+  }
+
+  // Distance validation screen
+  const distance_validation = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: function() {
+      const distanceOK = viewingDistance >= MIN_DISTANCE_CM && viewingDistance <= MAX_DISTANCE_CM;
+      
+      if (distanceOK) {
+        return `
+          <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+            <h3 style="color: #28a745;">✓ Distance Calibration Complete</h3>
+            <p>Your viewing distance: <strong>${Math.round(viewingDistance)} cm</strong></p>
+            <p>This is within the optimal range (${MIN_DISTANCE_CM}-${MAX_DISTANCE_CM} cm).</p>
+            <p>You can now proceed to the instructions.</p>
+          </div>
+        `;
+      } else {
+        return `
+          <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+            <h3 style="color: #dc3545;">⚠ Distance Outside Optimal Range</h3>
+            <p>Your viewing distance: <strong>${Math.round(viewingDistance)} cm</strong></p>
+            <p>Recommended range: <strong>${MIN_DISTANCE_CM}-${MAX_DISTANCE_CM} cm</strong></p>
+            <p>Calibration attempts: <strong>${distanceCalibrationAttempts + 1}</strong> of 5</p>
+            ${distanceCalibrationAttempts > 0 ? `
+            <div style="color: #0984e3; background-color: #e8f4fd; padding: 10px; border-radius: 5px; margin: 15px 0;">
+              <strong>Note:</strong> Display parameters have been reset to default values for this recalibration attempt.
+            </div>
+            ` : ''}
+            <div style="color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 5px; margin: 15px 0;">
+              <strong>Please adjust your position and recalibrate.</strong><br>
+              Move closer or farther from your screen to get within the ${MIN_DISTANCE_CM}-${MAX_DISTANCE_CM} cm range.
+            </div>
+          </div>
+        `;
+      }
+    },
+    choices: function() {
+      const distanceOK = viewingDistance >= MIN_DISTANCE_CM && viewingDistance <= MAX_DISTANCE_CM;
+      return distanceOK ? ['Continue to Instructions'] : ['Recalibrate Distance'];
+    },
+    data: {
+      trial_type: 'distance_validation',
+      keep: true
+    },
+    on_finish: function(data) {
+      data.viewing_distance_cm = viewingDistance;
+      data.distance_within_range = viewingDistance >= MIN_DISTANCE_CM && viewingDistance <= MAX_DISTANCE_CM;
+      data.calibration_attempt = distanceCalibrationAttempts + 1;
+      
+      if (!data.distance_within_range) {
+        distanceCalibrationAttempts++;
+        
+        // FULL RESET OF CALIBRATION PARAMETERS
+        pixelsPerDegree = 50;
+        imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+        letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+        viewingDistance = 60; // Default estimate
+        
+        console.log(`Distance calibration failed - attempt ${distanceCalibrationAttempts}. All parameters reset to defaults.`);
+      }
+    }
+  };
+
+
+  // Create 4 random numbers to display
+  function generateEdgeNumbers() {
+    return Array(4).fill(0).map(() => Math.floor(Math.random() * 9 + 1)); // 1-digit number
+  }
+
+  // The instruction screen of image size test
+  const edge_number_instructions = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <div style="max-width:700px; margin:0 auto; font-size:18px;">
+        <h3>Screen Size Test</h3>
+        <p>To ensure the images are fully visible, you will now see an image with 4 numbers—one at each edge (top-left, top-right, bottom-left, bottom-right).</p>
+        <p>Please carefully look for the numbers, then fill them in the boxes on the next screen. <br>
+        If you cannot see a number because it is outside the screen, click the red button on the left to the image to restart calibration.</p>
+        <p>This ensures the experiment will work properly on your display.</p>
+      </div>
+    `,
+    choices: ["Continue"]
+  };
+
+  // The main screen with image size task and form
+  function createEdgeNumberTask(edgeNumbers, attempt) {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: function() {
+        const testImage = 'stimuli/pictures/test_size/000000205977.jpg';
+        const finalImageHeight  = imageHeight;
+
+        return `
+        <div style="display:flex;align-items:center;justify-content:center;width:100vw;height:100vh;background:#fff;">
+          <!-- Red button (Restart), vertically centered left -->
+          <div style="flex:0 0 180px;display:flex;align-items:center;justify-content:flex-end;height:${finalImageHeight}px;">
+            <button id="edge-number-fail" class="jspsych-btn"
+              style="background:#d63031;color:white;padding:15px 20px;border:none;border-radius:8px;
+                    font-size:16px;cursor:pointer;height:60px;display:flex;align-items:center;box-sizing:border-box; margin-right:15px;">
+              Cannot See All Numbers<br>Restart Calibration
+            </button>
+          </div>
+          <!-- Main image container -->
+          <div style="position:relative;display:inline-block;">
+            <img src="${testImage}"
+                style="height:${finalImageHeight}px;width:auto;display:block;
+                        border:3px solid #333;box-shadow:0 4px 8px rgba(0,0,0,0.3);" id="test-image"/>
+            <!-- Corner numbers -->
+            <div style="position:absolute;top:10px;left:10px;font-size:34px;color:#E17055;font-weight:bold;
+                        background:rgba(255,255,255,0.9);padding:2px 10px;border-radius:7px;z-index:2;">
+              ${edgeNumbers[0]}
+            </div>
+            <div style="position:absolute;top:10px;right:10px;font-size:34px;color:#00B894;font-weight:bold;
+                        background:rgba(255,255,255,0.9);padding:2px 10px;border-radius:7px;z-index:2;">
+              ${edgeNumbers[1]}
+            </div>
+            <div style="position:absolute;bottom:10px;left:10px;font-size:34px;color:#0984E3;font-weight:bold;
+                        background:rgba(255,255,255,0.9);padding:2px 10px;border-radius:7px;z-index:2;">
+              ${edgeNumbers[2]}
+            </div>
+            <div style="position:absolute;bottom:10px;right:10px;font-size:34px;color:#FDCB6E;font-weight:bold;
+                        background:rgba(255,255,255,0.9);padding:2px 10px;border-radius:7px;z-index:2;">
+              ${edgeNumbers[3]}
+            </div>
+            <!-- Corner input boxes -->
+            <input type="text" maxlength="1" id="input-tl"
+              style="position:fixed;top:50%;left:50%;
+                    transform: translate(-150%, -150%);
+                    width:120px;border:2px solid #E17055;
+                    border-radius:6px;text-align:center;font-size:17px;padding:2px 0;
+                    background:white; z-index: 9999;"
+              placeholder="Top Left" autocomplete="off" required>
+            <input type="text" maxlength="1" id="input-tr"
+              style="position:fixed;top:50%;left:50%;
+                    transform: translate(50%, -150%);
+                    width:120px;border:2px solid #00B894;
+                    border-radius:6px;text-align:center;font-size:17px;padding:2px 0;
+                    background:white; z-index: 9999;"
+              placeholder="Top Right" autocomplete="off" required>
+            <input type="text" maxlength="1" id="input-bl"
+              style="position:fixed;top:50%;left:50%;
+                    transform: translate(-150%, 50%);
+                    width:120px;border:2px solid #0984E3;
+                    border-radius:6px;text-align:center;font-size:17px;padding:2px 0;
+                    background:white; z-index: 9999;"
+              placeholder="Bottom Left" autocomplete="off" required>
+            <input type="text" maxlength="1" id="input-br"
+              style="position:fixed;top:50%;left:50%;
+                    transform: translate(50%, 50%);
+                    width:120px;border:2px solid #FDCB6E;
+                    border-radius:6px;text-align:center;font-size:17px;padding:2px 0;
+                    background:white; z-index: 9999;"
+              placeholder="Bottom Right" autocomplete="off" required>
+          </div>
+          <!-- Green button (Submit), vertically centered right, error message is below it -->
+          <div style="flex:0 0 180px;display:flex;flex-direction:column;align-items:center;justify-content:center;height:${finalImageHeight}px;">
+            <button type="button" id="submit-edge-numbers" class="jspsych-btn"
+              style="background:#28a745;color:white;padding:15px 20px;border:none;border-radius:8px;
+                    font-size:16px;cursor:pointer;height:60px;display:flex;align-items:center;box-sizing:border-box;">
+              Submit Numbers
+            </button>
+            <div id="validation-error" style="color:#d63031;font-size:14px;margin-top:14px;font-weight:bold;display:none"></div>
+          </div>
+        </div>
+        `;
+      },
+      choices: [],
+      on_load: function() {
+        document.getElementById("input-tl").focus();
+        document.getElementById("submit-edge-numbers").onclick = function() {
+          const tl = document.getElementById('input-tl').value.trim();
+          const tr = document.getElementById('input-tr').value.trim();
+          const bl = document.getElementById('input-bl').value.trim();
+          const br = document.getElementById('input-br').value.trim();
+          const errorMsg = document.getElementById('validation-error');
+          if (tl && tr && bl && br) {
+            errorMsg.style.display = "none";
+            jsPsych.finishTrial({user_entries: [tl, tr, bl, br], edgeNumbers, attempt, fail: false});
+          } else {
+            errorMsg.textContent = 'Please fill in all four numbers before submitting.';
+            errorMsg.style.display = "block";
+            // Highlight empty fields
+            if (!tl) document.getElementById('input-tl').style.borderColor = '#d63031';
+            if (!tr) document.getElementById('input-tr').style.borderColor = '#d63031';
+            if (!bl) document.getElementById('input-bl').style.borderColor = '#d63031';
+            if (!br) document.getElementById('input-br').style.borderColor = '#d63031';
+          }
+        };
+        document.getElementById("edge-number-fail").onclick = function() {
+          jsPsych.finishTrial({user_entries: null, edgeNumbers, attempt, fail: true});
+        };
+        // Enter key support and input clearing
+        ["input-tl", "input-tr", "input-bl", "input-br"].forEach(id => {
+          const input = document.getElementById(id);
+          input.addEventListener("keypress", function(e) {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              document.getElementById("submit-edge-numbers").click();
+            }
+          });
+          input.addEventListener("input", function() {
+            const originalColors = {
+              'input-tl': '#E17055',
+              'input-tr': '#00B894',
+              'input-bl': '#0984E3',
+              'input-br': '#FDCB6E'
+            };
+            this.style.borderColor = originalColors[id];
+            // Hide error if all are filled
+            const allInputs = ["input-tl", "input-tr", "input-bl", "input-br"];
+            const allFilled = allInputs.every(inputId => document.getElementById(inputId).value.trim() !== '');
+            if (allFilled) {
+              const errorMsg = document.getElementById('validation-error');
+              errorMsg.style.display = "none";
+            }
+          });
+        });
+      },
+      data: {
+        trial_type: 'edge_number_task',
+        keep: true
+      },
+      on_finish: function(data) {
+        data.calculated_image_height = 
+        imageHeight;
+        data.actual_display_height = Math.min(imageHeight, window.innerHeight * 0.8);
+        data.pixels_per_degree = pixelsPerDegree;
+        data.screen_width = window.innerWidth;
+        data.screen_height = window.innerHeight;
+        data.attempt_number = attempt;
+        data.edge_numbers_shown = edgeNumbers;
+      }
+    };
+  }
+
+  // Create failure notification screen
+  function createEdgeTestFailureScreen() {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div style="max-width: 600px; margin: 0 auto; font-size: 18px; text-align: center;">
+          <h2 style="color: #d63031;">Screen Size Test Failed</h2>
+          <p>After 3 attempts, you were unable to see all the numbers at the image corners.</p>
+          <p>This means the calibrated image size may not fit properly on your screen.</p>
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>Please adjust your position:</strong></p>
+            <ul style="text-align: left; display: inline-block;">
+              <li>Move closer to your screen</li>
+              <li>Ensure you're sitting directly in front of the screen</li>
+              <li>Check that your screen is not too small</li>
+            </ul>
+          </div>
+          <p>You will now be taken back to the distance calibration to try again.</p>
+        </div>
+      `,
+      choices: ['Restart Distance Calibration'],
+      data: {
+        trial_type: 'edge_test_failure',
+        keep: true
+      }
+    };
+  }
+
+
+  function createEdgeRestartPromptScreen() {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div style="max-width: 600px; margin: 0 auto; font-size: 20px; text-align: center;">
+          <h2 style="color: #d63031;">Calibration Will Restart</h2>
+          <p>
+            The experiment will now restart from the calibration step.<br>
+            Please click below to begin the calibration again.
+          </p>
+        </div>
+      `,
+      choices: ['Restart Calibration'],
+      data: { trial_type: 'edge_restart_prompt', keep: true }
+    };
+  }
+
+  function edgeNumberValidationLoop() {
+    let attempt = 1;
+    let edgeNumbers = generateEdgeNumbers();
+    let restartNeeded = false;
+
+    // We'll create the node directly before each loop (jsPsych doesn't support dynamic function nodes)
+    let edgeTrial = createEdgeNumberTask(edgeNumbers, attempt);
+
+    return {
+      timeline: [
+        // 1. Edge number task
+        {
+          timeline: [edgeTrial],
+          conditional_function: function() { return !restartNeeded; }
+        },
+        // 2. Restart prompt
+        {
+          timeline: [createEdgeRestartPromptScreen()],
+          conditional_function: function() { return restartNeeded; }
+        }
+      ],
+      loop_function: function(data) {
+        const resp = data.values()[0];
+
+        // 1. After showing restart prompt, reset everything for next loop
+        if (restartNeeded) {
+          restartNeeded = false;
+          attempt = 1;
+          edgeNumbers = generateEdgeNumbers();
+          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt); // new task object for next loop
+          return false;
+        }
+
+        // 2. Red button or 3 fails: trigger restart
+        if (
+          resp.fail ||
+          (attempt >= 3 && JSON.stringify(resp.user_entries) !== JSON.stringify(edgeNumbers.map(String)))
+        ) {
+          restartNeeded = true;
+          jsPsych.data.addProperties({ edge_test_restart_needed: true });
+          return true; // show prompt, then loop will break
+        }
+
+        // 3. Correct input
+        if (JSON.stringify(resp.user_entries) === JSON.stringify(edgeNumbers.map(String))) {
+          jsPsych.data.addProperties({ edge_test_restart_needed: false });
+          attempt = 1;
+          edgeNumbers = generateEdgeNumbers();
+          edgeTrial = createEdgeNumberTask(edgeNumbers, attempt); // new task object for next loop
+          return false; // proceed to experiment
+        }
+
+        // 4. Wrong input but <3 attempts: try again
+        attempt++;
+        return true; // loop again
+      }
+    };
+  }
+
+  // Calibration failed screen
+  const calibration_failed = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <div style="max-width: 600px; margin: 0 auto; font-size: 18px; text-align: center;">
+        <h2 style="color: #dc3545;">Calibration Unsuccessful</h2>
+        <p>After 5 attempts, we were unable to calibrate your viewing distance to the required range (${MIN_DISTANCE_CM}-${MAX_DISTANCE_CM} cm).</p>
+        <p>Unfortunately, you cannot participate in this study without proper distance calibration.</p>
+        <p style="margin-top: 30px;">
+          <strong>Thank you for your interest in participating.</strong>
+        </p>
+        <p style="font-size: 16px; color: #666;">
+          Click anywhere to finish the experiment.
+        </p>
+      </div>
+    `,
+    choices: ['Finish Experiment'],
+    data: {
+      trial_type: 'calibration_failed',
+      keep: true
+    },
+    on_finish: function() {
+      // Exit fullscreen and end experiment
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+      jsPsych.endExperiment();
+    }
+  };
+
+  // Show consent form before the experiment starts
+  const consent_form = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <div style="max-width: 800px; margin: 0 auto; text-align: left; font-size: 18px;">
+        <h2 style="text-align: center;">Study Consent Form</h2>
+
+        <p>The School of Psychological Sciences at Tel-Aviv University would like to thank you for participating in an important scientific study in the cognitive psychology field.</p>
+
+        <p><strong>Study Duration:</strong> This experiment will take approximately <strong>30 minutes</strong> to complete.</p>
+
+        <p><strong>What you will do:</strong> You will view pairs of images with letters overlaid on them and answer questions about the letters and the images.</p>
+
+        <p>All information you provide will remain confidential and will not be associated with your name.</p>
+
+        <p>If you agree to participate, please be aware that you are free to withdraw at any point throughout the duration of the experiment.</p>
+
+        <p>If you have any further questions concerning this study please feel free to contact us through email: mudriklab2@gmail.com.</p>
+
+        <p>Your participation is solicited, yet strictly voluntary.</p>
+
+        <p><strong>Please indicate below that you understand your rights and agree to participate in the experiment.</strong></p>
+      </div>
+    `,
+    choices: ['I Consent to Participate'],
+    data: { keep: true, trial_type: 'consent' }
+  };
+
+  // Get participant info
+  const participant_info_questions = {
+    type: jsPsychSurveyHtmlForm,
+    html: `
+      <div style="max-width: 500px; margin: 0 auto;">
+        <h3>Participant Information</h3>
+        <p><label>Participant ID: <input name="participant_id" type="text" required placeholder="Enter your ID"></label></p>
+        <p><label>Age: <input name="age" type="number" min="18" max="99" required></label></p>
+        <p><label>Gender:
+          <select name="gender" required>
+            <option value="" disabled selected>Select gender</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+            <option value="Other">Other</option>
+            <option value="Prefer not to answer">Prefer not to answer</option>
+          </select>
+        </label></p>
+        <p><label>Handedness:
+          <select name="handedness" required>
+            <option value="" disabled selected>Select handedness</option>
+            <option value="Left">Left</option>
+            <option value="Right">Right</option>
+          </select>
+        </label></p>
+        <p><label>Vision:
+          <select name="vision" required>
+            <option value="" disabled selected>Select vision status</option>
+            <option value="Normal">Normal vision</option>
+            <option value="Corrected">Corrected vision (glasses/contacts)</option>
+            <option value="Impaired">Vision impairment</option>
+          </select>
+        </label></p>
+      </div>
+    `,
+    button_label: "Continue",
+    data: { keep: true, trial_type: 'participant_info' }
+  };
+
+  const initial_instructions = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <h2 style="text-align: center; color: #2d3436;">Before We Begin</h2>
+        
+        <div style="background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0; text-align: center; font-weight: bold; color: #0984e3;">
+            Please ensure you are in a comfortable viewing position before starting the experiment.
+          </p>
+        </div>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Make sure to follow the following instructions:</strong></p>
+          <ul>
+            <li>Sit at a comfortable distance from your screen (40-100 cm)</li>
+            <li>Ensure good lighting and minimal distractions</li>
+            <li>The experiment will switch to fullscreen mode automatically</li>
+          </ul>
+        </div>
+        
+        <p style="text-align: center; margin-top: 30px;">
+          <strong>Click continue when you're ready to proceed.</strong>
+        </p>
+      </div>
+    `,
+    choices: ['Continue'],
+    data: { keep: false, trial_type: 'initial_instructions' }
+  };
+
+  const instructions = {
+    type: jsPsychInstructions,
+    show_clickable_nav:true,
+    pages: [`
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <h2 style="text-align: center; color: #2d3436;">Instructions</h2>
+                
+        <p>In each trial of this experiment, pairs of images of scenes will be presented on the screen one after another. On top of each image a small letter will be presented in the center.</p>
+        <p>In each trial, you will be asked to decide if the letters that appeared were the same letter or not, and then to rate how visually similar the two images were.</p>
+      </div>`, `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <p>You will first complete  a few practice trials before the actual experiment begins.</p>
+        <p>We will now give you more detailed instructions, please read them carefully.</p>
+      </div>`, `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 16px; line-height: 1.6;">
+        <p><strong>Your task:</strong></p>
+        <ul>
+          <li>
+            The two letters that will appear on top of the image are always L and T, but they are designed in a way that makes them harder to identify. They can also appear in different orientations:
+            <ul style="margin-top: 6px;">
+              <li>For example:</li>
+              <li>
+                <img src='stimuli/letters_demo.png' style="width: 25%; max-width: 100%; height: auto; display: block; margin: 10px auto;">
+              </li>
+            </ul>
+          </li>
+          <li>
+            At the end of the trial, you'll answer two questions using the mouse:
+            <ul style="margin-top: 6px;">
+              <li>1. Were the two letters, presented at the center of the screen, the same or different?  In this example, they are different.</li>
+              <li>
+                2. How visually similar were the two images on which the letters appeared? This should be answered using a scale of 1 to 6 where:
+                <ul>
+                  <li style="color: blue;">1 - very different</li>
+                  <li style="color: blue;">6 - very similar</li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <div style="background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0; text-align: center; font-weight: bold; color: #0984e3;">
+              Important: Please look carefully at the fixation cross that appears when each trial begins and continue fixating at the center of the screen throughout the trial.
+            </p>
+            <p style="margin: 0; text-align: center; font-weight: bold; color: #0984e3;">
+              This is NOT a speeded task, so make sure to provide the most accurate responses with no speed limit.
+            </p>
+        </div>
+      </div>    
+    `, `
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <h3 style="color: #2d3436;">Trial Demonstration:</h3>
+        <p>Please press the Next button to start a demonstration of a trial in a <b>slow-paced mode</b></p>
+        <p>Make sure to fixate on the center of the screen and watch the letters and images</p>
+        <p>Then, try to answers the two questions at the end of the trial</p>
+      </div>
+    `],
+    data: { keep: false, trial_type: 'instructions' }
+  };
+
+  const practice_instructions = {
+    type: jsPsychInstructions,
+    show_clickable_nav:true,
+    pages: [`
+      <div style="max-width: 900px; margin: 0 auto; text-align: left; font-size: 18px; line-height: 1.6;">
+        <p style="text-align: center; margin-top: 30px; font-size: 26px">
+          Well done, you have completed the demonstration trial. Note that the actual trials will run <b>much faster</b>, so please pay close attention.
+        </p>
+        <p style="text-align: center; margin-top: 30px; font-size: 26px">
+          You will now complete practice trials. During the practice trials, as in the demonstration trial you will receive feedback on your answer about the letters. This feedback will not appear in the actual experiment.
+        </p>
+        <h2 style="text-align: center; margin-top: 30px;">
+          <strong>To start the practice session press the Next button</strong>
+        </h2>
+        <h3 style="text-align: center; margin-top: 30px;">
+          Good Luck! 🍀✨
+        </h3>
+      </div>
+    `],
+    data: { keep: false, trial_type: 'practice_instructions' }
+  };
+
+  // ========== TRIAL BUILDING FUNCTIONS ==========
+  function createFixation(duration = 500, trialPhase = 'fixation', stim_path = 'stimuli/fixation_cross.png') {
+    return {
+      type: jsPsychImageKeyboardResponse,
+      stimulus: stim_path,
+      stimulus_height: function() { return imageHeight * 0.1; },
+      choices: "NO_KEYS",
+      trial_duration: duration,
+      data: {
+        trial_phase: trialPhase,
+        trial_type: 'fixation_presentation',
+        keep: true
+      },
+      on_start: function() {
+        hideMouseCursor();
+      },
+      on_finish: function(data) {
+        data.global_trial_index = globalTrialCounter;
+        data.fixation_duration = duration;
+        data.display_start_time = performance.now();
+      }
+    };
+  }
+
+  function createImageTrial(imageVar, letterVar, rotationVar, trialPhase, stim_duration = 288) {
+    return {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        const imagePath = jsPsych.timelineVariable(imageVar);
+        const letter = jsPsych.timelineVariable(letterVar);
+        const rotation = jsPsych.timelineVariable(rotationVar);
+        return createImageWithLetter(imagePath, letter, rotation);
+      },
+      choices: "NO_KEYS",
+      trial_duration: stim_duration,
+      data: {
+        trial_phase: trialPhase,
+        trial_type: 'image_presentation',
+        keep: true
+      },
+      on_start: function() {
+        hideMouseCursor();
+      },
+      on_finish: function(data) {
+        data.image_path = jsPsych.timelineVariable(imageVar);
+        data.letter_shown = jsPsych.timelineVariable(letterVar);
+        data.letter_rotation = jsPsych.timelineVariable(rotationVar);
+        data.global_trial_index = globalTrialCounter;
+        data.display_start_time = performance.now();
+        data.actual_display_duration = data.rt || stim_duration;
+      }
+    };
+  }
+
+  function createMask(trialPhase, stim_duration = 300) {
+    return {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        const idx = Math.floor(Math.random() * maskFiles.length);
+        const maskPath = maskFiles[idx];
+
+        return `
+          <div style="display: flex; justify-content: center; align-items: center; height: 100vh; position: relative;">
+            <img src="${maskPath}" style="height:${imageHeight}px;" />
+          </div>`;
+      },
+      choices: "NO_KEYS",
+      trial_duration: stim_duration,
+      data: {
+        trial_phase: `mask_${trialPhase}`,
+        trial_type: 'mask_presentation',
+        keep: true
+      },
+      on_start: function() {
+        hideMouseCursor();
+      },
+      on_finish: function(data) {
+        data.global_trial_index = globalTrialCounter;
+        data.display_start_time = performance.now();
+        data.actual_display_duration = data.rt || stim_duration;
+      }
+    };
+  }
+
+  function createLetterQuestion(showFeedback = false) {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div style="font-size: 24px; margin-bottom: 30px;">
+          <p><strong>Were the two letters same or different?</strong></p>
+        </div>
+      `,
+      choices: ['Same', 'Different'],
+      data: { 
+        question_type: 'letter_discrimination',
+        trial_type: 'letter_discrimination_response',
+        keep: true
+      },
+      on_start: function() {
+        showMouseCursor();
+      },
+      on_finish: function(data) {
+        const letter1 = jsPsych.timelineVariable('letter1');
+        const letter2 = jsPsych.timelineVariable('letter2');
+        const ground_truth = letter1 === letter2 ? 'Same' : 'Different';
+        const participant_response = data.response === 0 ? 'Same' : 'Different';
+        const correct = ground_truth === participant_response;
+        
+        data.letter1 = letter1;
+        data.letter2 = letter2;
+        data.ground_truth_same_different = ground_truth;
+        data.participant_response_same_different = participant_response;
+        data.letter_discrimination_correct = correct;
+        data.global_trial_index = globalTrialCounter;
+        data.letter1_rotation = jsPsych.timelineVariable('rotation1');
+        data.letter2_rotation = jsPsych.timelineVariable('rotation2');
+        data.image1_path = jsPsych.timelineVariable('image1');
+        data.image2_path = jsPsych.timelineVariable('image2');
+        data.condition_same_different = jsPsych.timelineVariable('condition_same_different');
+        data.response_time_ms = data.rt;
+        data.response_timestamp = new Date().toISOString();
+        
+        if (showFeedback) {
+          data.feedback_shown = true;
+          data.feedback_correct = correct;
+        }
+      }
+    };
+  }
+
+  function createSimilarityQuestion() {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div style="max-width: 800px; margin: 0 auto;">
+          <p style="font-size: 24px; margin-bottom: 40px;">
+            <strong>How visually similar were the two images?</strong>
+          </p>
+          <div style="display: flex; justify-content: center; align-items: center; gap: 32px; margin: 50px 0;">
+            <span style="width: 90px; font-size: 15px; color: #555; text-align: center; flex-shrink: 0;">
+              Very<br>similar
+            </span>
+            <div id="rating-buttons" style="display: flex; gap: 12px;">
+              <!-- Buttons will be moved here by jsPsych -->
+            </div>
+            <span style="width: 90px; font-size: 15px; color: #555; text-align: center; flex-shrink: 0;">
+              Very<br>different
+            </span>
+          </div>
+        </div>
+      `,
+      choices: ['1', '2', '3', '4', '5', '6'],
+      button_html: '<button class="jspsych-btn" style="margin: 0; padding: 10px 20px; font-size: 18px; min-width: 50px;">%choice%</button>',
+      data: { 
+        question_type: 'similarity_rating',
+        trial_type: 'similarity_rating_response',
+        keep: true
+      },
+      on_start: function() {
+        showMouseCursor();
+        // Move the jsPsych buttons into the #rating-buttons container
+        setTimeout(function() {
+          const btnGroup = document.querySelector('#jspsych-html-button-response-btngroup');
+          const ratingDiv = document.getElementById('rating-buttons');
+          if (btnGroup && ratingDiv) {
+            ratingDiv.appendChild(btnGroup);
+            // Ensure proper styling
+            btnGroup.style.display = 'flex';
+            btnGroup.style.gap = '12px';
+            btnGroup.style.justifyContent = 'center';
+            btnGroup.style.alignItems = 'center';
+          }
+        }, 0);
+      },
+      on_finish: function(data) {
+        data.image1_path = jsPsych.timelineVariable('image1');
+        data.image2_path = jsPsych.timelineVariable('image2');
+        data.participant_similarity_rating = parseInt(data.response) + 1; // Convert 0-5 to 1-6
+        data.global_trial_index = globalTrialCounter;
+        data.trial_number = jsPsych.timelineVariable('trial_number');
+        data.is_practice = jsPsych.timelineVariable('is_practice');
+        data.response_time_ms = data.rt;
+        data.response_timestamp = new Date().toISOString();
+        
+        // Increment global trial counter after completing a full trial
+        globalTrialCounter++;
+      }
+    };
+  }
+
+  // Practice feedback screen
+  function createPracticeFeedback() {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: function() {
+        const lastTrial = jsPsych.data.get().last(2).values()[0]; // Get letter discrimination response
+        const correct = lastTrial.letter_discrimination_correct;
+        
+        return `
+          <div style="max-width: 500px; margin: 0 auto; font-size: 18px;">
+            <h3>${correct ? '✓ Correct!' : '✗ Incorrect'}</h3>
+            <p><strong>Your answer:</strong> ${lastTrial.participant_response_same_different}</p>
+            <p><strong>Correct answer:</strong> ${lastTrial.ground_truth_same_different}</p>
+            <p style="font-size: 14px; color: #666; margin-top: 20px;">
+              Remember: Focus on accuracy
+            </p>
+          </div>
+        `;
+      },
+      choices: ['Continue'],
+      trial_duration: 3000,
+      data: {
+        trial_type: 'practice_feedback',
+        keep: true
+      }
+    };
+  }
+
+  // Break screen
+  function createBreakScreen(blockNum, totalBlocks) {
+    return {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <div style="max-width: 600px; margin: 0 auto; font-size: 20px;">
+          <h2>Break Time</h2>
+          <p>You have completed <strong>${blockNum * BREAK_INTERVAL}</strong> out of ${NUM_EXPERIMENTAL_TRIALS} trials.</p>
+          <p>Block ${blockNum} of ${totalBlocks} complete.</p>
+          <p style="margin: 30px 0;">
+            Take a short break if you need one. When you're ready, click continue to proceed.
+          </p>
+          <p style="font-size: 16px; color: #666;">
+            Remember: Focus on accuracy rather than speed
+          </p>
+        </div>
+      `,
+      choices: ['Continue'],
+      data: {
+        trial_type: 'break_screen',
+        block_number: blockNum,
+        keep: true
+      }
+    };
+  }
+
+  // ========== GENERATE TRIAL DATA ==========
+  const practiceTrialData = generateBalancedTrials(NUM_PRACTICE_TRIALS, true);
+  const experimentalTrialData = generateBalancedTrials(NUM_EXPERIMENTAL_TRIALS, false);
+
+  // ========= SLOW DOWN DEMO ===========
+   demo_trial = {
+    letter1: 'T',
+    letter2: 'L',
+    condition_same_different: 'different',
+    condition_letter1: 'T',
+    condition_letter2: 'L',
+    is_practice: true
+  }
+ slow_down_fixation = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: function() {
+      return `<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                <img src="stimuli/pictures/sd_trial/sd_trial_fixation.png" style="height: ${imageHeight}px;" />
+              </div>`;
+    },
+    choices: "NO_KEYS",
+    trial_duration: 3000,
+    data: {
+      trial_type: 'fixation_slow_down',
+      keep: true
+    },
+    on_start: function() {
+      hideMouseCursor();
+    },
+  };
+  slow_down_mask = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: function() {
+      return `<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                <img src="stimuli/pictures/sd_trial/sd_trial_mask.png" style="height: ${imageHeight}px;" />
+              </div>`;
+    },
+        choices: "NO_KEYS",
+    trial_duration: 3000,
+    data: {
+      trial_type: 'mask_slow_down',
+      keep: true
+    },
+    on_start: function() {
+      hideMouseCursor();
+    },
+  };
+  slow_down_img1 = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: function() {
+      return `<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                <img src="stimuli/pictures/sd_trial/sd_trial_img1.png" style="height: ${imageHeight}px;" />
+              </div>`;
+    },    choices: "NO_KEYS",
+    trial_duration: 7000,
+    data: {
+      trial_type: 'img1_slow_down',
+      keep: true
+    },
+    on_start: function() {
+      hideMouseCursor();
+    },
+  };
+  slow_down_img2 = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: function() {
+      return `<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                <img src="stimuli/pictures/sd_trial/sd_trial_img2.png" style="height: ${imageHeight}px;" />
+              </div>`;
+    },
+    choices: "NO_KEYS",
+    trial_duration: 7000,
+    data: {
+      trial_type: 'img2_slow_down',
+      keep: true
+    },
+    on_start: function() {
+      hideMouseCursor();
+    },
+  };
+  slow_down_trial_demo = {
+    timeline: [
+      // ZOOM CHECK DISABLED
+      // {
+      //   timeline: [createZoomCheck()],
+      //   loop_function: function() {
+      //     return hasZoomChanged();
+      //   }
+      // },
+      slow_down_fixation,
+      slow_down_img1,
+      slow_down_mask,
+      slow_down_img2,
+      slow_down_mask,
+      createLetterQuestion(true),
+      createSimilarityQuestion(),
+      createPracticeFeedback()
+    ],
+    timeline_variables: [demo_trial],
+    data: { 
+      trial_type: 'practice',
+      is_practice: true,
+      keep: true
+    }
+  }
+
+  // ========== PRACTICE PHASE ==========
+  const practice_trials = [];
+  
+  for (let i = 0; i < practiceTrialData.length; i++) {
+    const trial = practiceTrialData[i];
+    
+    practice_trials.push({
+      timeline: [
+        // ZOOM CHECK DISABLED
+        // {
+        //   timeline: [createZoomCheck()],
+        //   loop_function: function() {
+        //     return hasZoomChanged();
+        //   }
+        // },
+        createFixation(500, 'fixation_1'),
+        createImageTrial('image1', 'letter1', 'rotation1', 'image_1'),
+        createMask('1'),
+        // createFixation(500, 'fixation_2'),
+        createImageTrial('image2', 'letter2', 'rotation2', 'image_2'),
+        createMask('2'),
+        createLetterQuestion(true),
+        createSimilarityQuestion(),
+        createPracticeFeedback()
+      ],
+      timeline_variables: [trial],
+      data: { 
+        trial_type: 'practice',
+        is_practice: true,
+        keep: true
+      }
+    });
+  }
+
+  const practice_complete = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: function() {
+      // Calculate practice accuracy
+      const practiceResponses = jsPsych.data.get().filter({
+        question_type: 'letter_discrimination',
+        is_practice: true
+      });
+      
+      const totalPractice = practiceResponses.count();
+      const correctPractice = practiceResponses.filter({letter_discrimination_correct: true}).count();
+      const accuracy = totalPractice > 0 ? Math.round((correctPractice / totalPractice) * 100) : 0;
+      
+      return `
+        <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+          <h2>Practice Phase Complete!</h2>
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>Your Practice Performance</h3>
+            <p style="font-size: 24px; font-weight: bold; color: ${accuracy >= 70 ? '#28a745' : '#ffc107'};">
+              ${accuracy}% Correct
+            </p>
+            <p>${correctPractice} out of ${totalPractice} trials correct</p>
+          </div>
+          <p>You will now begin the main experiment with <strong>${NUM_EXPERIMENTAL_TRIALS} trials</strong>, it will take about 30 minutes.</p>
+
+          <p><strong>Remember:</strong></p>
+          <ul style="text-align: left; display: inline-block;">
+            <li>Take your time - try to provide the most accurate responses</li>
+            <li>Focus on both the letters and the background images</li>  
+            <li>You'll have breaks every ${BREAK_INTERVAL} trials</li>
+          </ul>
+
+          <h2>Good Luck! 🍀✨</h2>
+        </div>
+      `;
+    },
+    choices: ['Begin Main Experiment'],
+    data: {
+      trial_type: 'practice_complete',
+      keep: true
+    }
+  };
+
+  // ========== MAIN EXPERIMENTAL TRIALS ==========
+  const experimental_blocks = [];
+  const totalBlocks = Math.ceil(NUM_EXPERIMENTAL_TRIALS / BREAK_INTERVAL);
+  
+  for (let block = 0; block < totalBlocks; block++) {
+    const startIdx = block * BREAK_INTERVAL;
+    const endIdx = Math.min(startIdx + BREAK_INTERVAL, NUM_EXPERIMENTAL_TRIALS);
+    const blockTrials = experimentalTrialData.slice(startIdx, endIdx);
+    
+    // Add trials for this block
+    for (let i = 0; i < blockTrials.length; i++) {
+      const trial = blockTrials[i];
+      
+      experimental_blocks.push({
+        timeline: [
+          // ZOOM CHECK DISABLED
+          // {
+          //   timeline: [createZoomCheck()],
+          //   loop_function: function() {
+          //     return hasZoomChanged();
+          //   }
+          // },
+          createFixation(500, 'fixation_1'),
+          createImageTrial('image1', 'letter1', 'rotation1', 'image_1'),
+          createMask('1'),
+          // createFixation(500, 'fixation_2'),
+          createImageTrial('image2', 'letter2', 'rotation2', 'image_2'),
+          createMask('2'),
+          createLetterQuestion(false),
+          createSimilarityQuestion()
+        ],
+        timeline_variables: [trial],
+        data: { 
+          trial_type: 'experimental',
+          is_practice: false,
+          block_number: block + 1,
+          keep: true
+        }
+      });
+    }
+    
+    // Add break screen after each block (except the last one)
+    if (block < totalBlocks - 1) {
+      experimental_blocks.push({
+        timeline: [
+          // ZOOM CHECK DISABLED
+          // {
+          //   timeline: [createZoomCheck()],
+          //   loop_function: function() {
+          //     return hasZoomChanged();
+          //   }
+          // },
+          createBreakScreen(block + 1, totalBlocks)
+        ],
+        data: {
+          trial_type: 'break',
+          keep: true
+        }
+      });
+    }
+  }
+
+  // ========== PRELOAD IMAGES ==========
+  const preload_images = {
+    type: jsPsychPreload,
+    images: function() {
+      const allImages = [];
+      // Add practice images
+      practiceTrialData.forEach(trial => {
+        allImages.push(trial.image1, trial.image2);
+      });
+      
+      // Add experimental images
+      experimentalTrialData.forEach(trial => {
+        allImages.push(trial.image1, trial.image2);
+      });
+      
+      // Add masks and fixation
+      allImages.push('stimuli/fixation_cross.png');
+      
+      // Add test image for edge number task
+      allImages.push('stimuli/pictures/test_size/000000205977.jpg');
+
+      // Add images for slow down trial demonstration
+      allImages.push('stimuli/pictures/sd_trial/sd_trial_fixation.png');
+      allImages.push('stimuli/pictures/sd_trial/sd_trial_mask.png');
+      allImages.push('stimuli/pictures/sd_trial/sd_trial_img1.png');
+      allImages.push('stimuli/pictures/sd_trial/sd_trial_img2.png');
+      
+      return allImages.concat(maskFiles);
+    },
+    data: {
+      trial_type: 'preload',
+      keep: false
+    }
+  };
+
+  // ========== FINAL SCREEN ==========
+  const finish_experiment = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: function() {
+      // Calculate final accuracy
+      const allResponses = jsPsych.data.get().filter({
+        question_type: 'letter_discrimination',
+        is_practice: false
+      });
+      
+      const totalTrials = allResponses.count();
+      const correctTrials = allResponses.filter({letter_discrimination_correct: true}).count();
+      const accuracy = totalTrials > 0 ? Math.round((correctTrials / totalTrials) * 100) : 0;
+      
+      return `
+        <div style="max-width: 600px; margin: 0 auto; font-size: 18px;">
+          <h2>Experiment Complete!</h2>
+          <p>Thank you for your participation.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3>Your Final Performance</h3>
+            <p style="font-size: 24px; font-weight: bold; color: #28a745;">
+              ${accuracy}% Correct
+            </p>
+            <p>${correctTrials} out of ${totalTrials} trials correct</p>
+          </div>
+          
+          <p>You completed <strong>${NUM_EXPERIMENTAL_TRIALS}</strong> trials successfully.</p>
+          <p style="font-size: 16px; color: #666;">
+            Your data will be automatically downloaded when you click finish.
+          </p>
+        </div>
+      `;
+    },
+    choices: ['Finish & Download Data'],
+    data: {
+      trial_type: 'experiment_end',
+      keep: true
+    },
+    on_finish: function() {
+      // Exit fullscreen
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
+  // Distance calibration loop
+  const distance_calibration_loop = {
+    timeline: [
+      // ZOOM CHECK DISABLED
+      // {
+      //   timeline: [createZoomCheck()],
+      //   loop_function: function() {
+      //     return hasZoomChanged();
+      //   }
+      // },
+       // RESET BEFORE EVERY CALIBRATION ATTEMPT
+      {
+        type: jsPsychCallFunction,
+        func: function() {
+          pixelsPerDegree = 50;
+          imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+          letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+          viewingDistance = 60;
+          distanceCalibrationAttempts = 0;
+          console.log("CALIBRATION RESET: pixelsPerDegree set to", pixelsPerDegree);
+        }
+      },
+      createVirtualChinrest(),
+      distance_validation
+    ],
+    loop_function: function() {
+      const lastValidation = jsPsych.data.get().last(1).values()[0];
+      const distanceOK = lastValidation.distance_within_range;
+      const tooManyAttempts = distanceCalibrationAttempts >= 5;
+      
+      if (tooManyAttempts && !distanceOK) {
+        // End the loop and show calibration failed screen
+        return false;
+      }
+      
+      return !distanceOK;
+    },
+    data: {
+      trial_type: 'distance_calibration_loop',
+      keep: true
+    }
+  };
+
+  // Conditional timeline for calibration failure
+  const calibration_check = {
+    timeline: [calibration_failed],
+    conditional_function: function() {
+      const lastValidation = jsPsych.data.get().filter({trial_type: 'distance_validation'}).last(1).values()[0];
+      return distanceCalibrationAttempts >= 5 && !lastValidation.distance_within_range;
+    }
+  };
+
+  // ========== MAIN TIMELINE ==========
+  const main_timeline = [
+    {
+      type: jsPsychCallFunction,
+      func: function() {
+        // ZOOM INITIALIZATION DISABLED
+        // Initialize zoom state at the very beginning
+        // initialZoomState = getZoomLevel();
+        // console.log('Initial zoom state set to:', initialZoomState);
+        
+        // Add experiment metadata
+        jsPsych.data.addProperties({
+          experiment_start_time: new Date().toISOString(),
+          experiment_version: 'letter_discrimination_v2.0',
+          num_practice_trials: NUM_PRACTICE_TRIALS,
+          num_experimental_trials: NUM_EXPERIMENTAL_TRIALS,
+          break_interval: BREAK_INTERVAL,
+          letter_size_visual_angle: LETTER_SIZE_VISUAL_ANGLE,
+          image_display_visual_angle: imageDisplayVisualAngle,
+          l_vertical_position_percent: L_VERTICAL_POSITION_PERCENT,
+          t_probability: T_PROBABILITY,
+          min_distance_cm: MIN_DISTANCE_CM,
+          max_distance_cm: MAX_DISTANCE_CM,
+          // initial_zoom_level: initialZoomState, // DISABLED
+          browser_info: {
+            user_agent: navigator.userAgent,
+            screen_resolution: `${screen.width}x${screen.height}`,
+            window_size: `${window.innerWidth}x${window.innerHeight}`,
+            device_pixel_ratio: window.devicePixelRatio
+          }
+        });
+      },
+      data: { keep: false }
+    },
+    // consent_form,
+    // participant_info_questions,
+    // initial_instructions,
+    // ZOOM CHECK DISABLED
+    // {
+    //   timeline: [createInitialZoomCheck()],
+    //   loop_function: function() {
+    //     return !isZoom100();
+    //   }
+    // },
+    enter_fullscreen,
+    // Combined calibration and edge number validation loop
+    {
+      timeline: [
+        distance_calibration_loop,
+        calibration_check,
+        preload_images,
+        edge_number_instructions,
+        edgeNumberValidationLoop()
+      ],
+      loop_function: function() {
+        // Check for restart flag
+        const lastFlag = jsPsych.data.get().values().findLast(x => x.edge_test_restart_needed !== undefined);
+        if (lastFlag && lastFlag.edge_test_restart_needed) {
+          // Reset params (important!)
+          pixelsPerDegree = 50;
+          imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+          letterSizePx = LETTER_SIZE_VISUAL_ANGLE * pixelsPerDegree;
+          viewingDistance = 60;
+          distanceCalibrationAttempts = 0;
+          // Clear flag so infinite loop can't happen
+          jsPsych.data.addProperties({ edge_test_restart_needed: false });
+          return true; // restart calibration
+        }
+        return false; // proceed
+      }
+    },
+
+    instructions,
+    // ZOOM CHECK DISABLED
+    // {
+    //   timeline: [createZoomCheck()],
+    //   loop_function: function() {
+    //     return hasZoomChanged();
+    //   }
+    // },
+    slow_down_trial_demo,
+    practice_instructions,
+    ...practice_trials,
+    practice_complete,
+    // ZOOM CHECK DISABLED
+    // {
+    //   timeline: [createZoomCheck()],
+    //   loop_function: function() {
+    //     return hasZoomChanged();
+    //   }
+    // },
+    ...experimental_blocks,
+    finish_experiment
+  ];
+
+  // ========== RUN EXPERIMENT ==========
+  jsPsych.run(main_timeline);
+</script>
+</html>

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mini Similarity Experiment</title>
+  <!-- jsPsych and plugins -->
+  <script src="jspsych/dist/jspsych.js"></script>
+  <script src="jspsych/dist/plugin-html-keyboard-response.js"></script>
+  <script src="jspsych/dist/plugin-html-button-response.js"></script>
+  <script src="jspsych/dist/plugin-image-keyboard-response.js"></script>
+  <script src="jspsych/dist/plugin-survey-multi-choice.js"></script>
+  <script src="jspsych/dist/plugin-preload.js"></script>
+  <script src="jspsych/dist/plugin-call-function.js"></script>
+  <script src="jspsych/dist/plugin-webgazer-init-camera.js"></script>
+  <script src="jspsych/dist/plugin-webgazer-calibrate.js"></script>
+  <script src="jspsych/dist/plugin-webgazer-validate.js"></script>
+  <script src="jspsych/dist/plugin-virtual-chinrest.js"></script>
+  <script src="jspsych/dist/extension-webgazer.js"></script>
+  <link rel="stylesheet" href="jspsych/dist/jspsych.css" />
+  <script src="jspsych/webgazer.js"></script>
+  <style>
+    .jspsych-content {
+      max-width: 100% !important;
+      text-align: center;
+    }
+  </style>
+</head>
+<body></body>
+<script>
+  // ===== PARAMETERS =====
+  const calibrationPoints = 5;
+  const repetitionsPerCalibrationPoint = 2;
+  const fixationToImageRatio = 0.5;
+  const fixationRadiusVisualAngle = 5;
+  const fixationAccuracyPercent = 80;
+  const consecutiveFixationTime = 500;
+  const fixationTimeout = 10000;
+  const imageDisplayVisualAngle = 26;
+  const MAX_BAD_FIXATIONS = 3; // recalibrate after 3 bad fixations
+  let pixelsPerDegree = 50;
+  let imageHeight = 0;
+  let badFixationCount = 0;
+
+  // --- Define your mask files (change 30 to your number) ---
+  const NUM_MASKS = 30;
+  const maskFiles = Array.from({length: NUM_MASKS}, (_, i) =>
+    `stimuli/masks/mask_${String(i + 1).padStart(2, '0')}.jpg`
+  );
+
+  // ===== GAZE DOT UTILITIES =====
+  function addGazeDot() {
+    if (document.getElementById('gaze-dot')) return;
+    const dot = document.createElement('div');
+    dot.id = "gaze-dot";
+    dot.style.position = 'fixed';
+    dot.style.width = '12px';
+    dot.style.height = '12px';
+    dot.style.background = 'red';
+    dot.style.borderRadius = '50%';
+    dot.style.pointerEvents = 'none';
+    dot.style.zIndex = 9999;
+    dot.style.left = '-100px';
+    dot.style.top = '-100px';
+    document.body.appendChild(dot);
+    dot._interval = setInterval(() => {
+        webgazer.getCurrentPrediction().then(g => {
+        if (g && g.x != null && g.y != null) {
+            dot.style.left = (g.x - 6) + 'px';
+            dot.style.top  = (g.y - 6) + 'px';
+        }
+        });
+    }, 50);
+    }
+
+
+  function removeGazeDot() {
+    const dot = document.getElementById('gaze-dot');
+    if (dot) {
+      clearInterval(dot._interval);
+      dot.remove();
+    }
+  }
+
+  // ======== JSPSYCH INIT ========
+  const jsPsych = initJsPsych({
+    extensions: [{ type: jsPsychExtensionWebgazer }]
+  });
+
+  // ====== CALIBRATION HELPERS ======
+  function getCalibrationPoints(n) {
+    if (n === 5)  return [[25,25],[75,25],[50,50],[25,75],[75,75]];
+    if (n === 9)  return [[20,20],[50,20],[80,20],[20,50],[50,50],[80,50],[20,80],[50,80],[80,80]];
+    if (n === 13) return [[10,10],[30,10],[50,10],[70,10],[90,10],
+                          [20,50],[40,50],[60,50],[80,50],
+                          [10,90],[30,90],[50,90],[70,90]];
+    return [[50,50]];
+  }
+
+  // ========== INSTRUCTION & CALIBRATION SCREENS ==========
+  const camera_instructions = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>In order to participate, you must allow the experiment to use your camera for eye tracking.</p>
+      <p>You will be prompted to do this on the next screen.</p>
+      <p>If you do not wish to allow use of your camera, you cannot participate in this experiment.</p>
+      <p>It may take up to 30 seconds for the camera to initialize after you give permission.</p>
+    `,
+    choices: ['Got it'],
+    data: { keep: false }
+  };
+  const init_camera = { type: jsPsychWebgazerInitCamera };
+  const virtual_chinrest = {
+    type: jsPsychVirtualChinrest,
+    blindspot_reps: 3,
+    resize_units: "deg",
+    pixels_per_unit: 50,
+    item_path: 'stimuli/credit_card.png',
+    on_finish: function(data) {
+      if (data.px2deg) {
+        pixelsPerDegree = data.px2deg;
+      } else {
+        pixelsPerDegree = 50;
+      }
+      imageHeight = imageDisplayVisualAngle * pixelsPerDegree;
+      const maxHeightPx = window.innerHeight * 0.95;
+      if (imageHeight > maxHeightPx) imageHeight = maxHeightPx;
+    }
+  };
+  const calibration_instructions = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>Now you'll calibrate the eye tracker.</p>
+      <p>Look at each dot and click on it.</p>
+    `,
+    choices: ['Got it'],
+    data: { keep: false }
+  };
+  const calibration = {
+    type: jsPsychWebgazerCalibrate,
+    calibration_points: getCalibrationPoints(calibrationPoints),
+    repetitions_per_point: repetitionsPerCalibrationPoint,
+    randomize_calibration_order: true
+  };
+  const calibration_done = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `<p>Great, we're done with calibration!</p>`,
+    choices: ['OK'],
+    data: { keep: false }
+  };
+  const validation_instructions = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>Now we'll measure the accuracy of the calibration.</p>
+      <p>Look at each dot as it appears on the screen.</p>
+      <p style="font-weight: bold;">You do not need to click on the dots this time.</p>
+    `,
+    choices: ['Got it'],
+    post_trial_gap: 500,
+    data: { keep: false }
+  };
+  const validation = {
+    type: jsPsychWebgazerValidate,
+    validation_points: getCalibrationPoints(calibrationPoints),
+    roi_radius: fixationRadiusVisualAngle * pixelsPerDegree,
+    time_to_saccade: 1000,
+    validation_duration: 2000,
+    data: { task: 'validate' }
+  };
+  const validation_done = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>✅ Calibration complete!</p>
+      <p>Your eye tracking accuracy is sufficient.</p>
+      <p>Click the button below to continue to the experiment.</p>
+    `,
+    choices: ['Continue'],
+    data: { keep: false }
+  };
+  const recalibrate_instructions = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>The last few fixations were not stable enough.</p>
+      <p>We'll recalibrate the eye tracker before continuing.</p>
+    `,
+    choices: ['OK'],
+    data: { keep: false }
+  };
+  const before_exp_screen = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p style="font-size:30px;">We are ready to start the experiment!</p>
+      <p style="font-size:23px;">You will view pairs of images, one after the other.</p>
+      <p style="font-size:23px;">Rate their similarity on a 1–5 scale.</p>
+      <p style="font-size:23px;">Press <b>"Start"</b> to begin.</p>`,
+    choices: ['Start']
+  };
+
+  // ========== MINI BLOCK OF 5 TRIALS ==========
+  const mini_pairs = [
+    { image1: 'stimuli/pictures/image_003.jpg', image2: 'stimuli/pictures/image_004.jpg' },
+    { image1: 'stimuli/pictures/image_005.jpg', image2: 'stimuli/pictures/image_006.jpg' },
+    { image1: 'stimuli/pictures/image_007.jpg', image2: 'stimuli/pictures/image_008.jpg' },
+    { image1: 'stimuli/pictures/image_009.jpg', image2: 'stimuli/pictures/image_010.jpg' },
+    { image1: 'stimuli/pictures/image_011.jpg', image2: 'stimuli/pictures/image_012.jpg' }
+  ];
+  const preload_mini_images = {
+    type: jsPsychPreload,
+    images: mini_pairs.flatMap(pair => [pair.image1, pair.image2])
+      .concat(maskFiles)
+  };
+
+  // ========== SIMILARITY TRIAL WITH RANDOM MASK AND CENTERED SCALE ==========
+  function getSimilarityTrialBlock(pairs) {
+    return {
+      timeline: [
+        // Fixation (monitored for accuracy)
+        {
+          type: jsPsychImageKeyboardResponse,
+          stimulus: 'stimuli/fixation_cross.png',
+          stimulus_height: function() { return fixationToImageRatio * imageHeight; },
+          choices: "NO_KEYS",
+          trial_duration: null,
+          on_load: function() {
+            addGazeDot();
+            // Gaze monitoring
+            const buffer = [];
+            const radiusPx = pixelsPerDegree * fixationRadiusVisualAngle;
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            const startTime = performance.now();
+            const interval = setInterval(async () => {
+              const now = performance.now();
+              const gaze = await webgazer.getCurrentPrediction();
+              if (gaze && gaze.x != null && gaze.y != null) {
+                const dx = gaze.x - centerX;
+                const dy = gaze.y - centerY;
+                const inside = Math.sqrt(dx * dx + dy * dy) <= radiusPx;
+                buffer.push({ x: gaze.x, y: gaze.y, t: now, inside });
+                // Keep only last X ms
+                const recent = buffer.filter(pt => now - pt.t <= consecutiveFixationTime);
+                const percent = recent.length > 0
+                  ? 100 * recent.filter(pt => pt.inside).length / recent.length
+                  : 0;
+                if (recent.length >= 6 && percent >= fixationAccuracyPercent) {
+                  clearInterval(interval);
+                  jsPsych.finishTrial({ fixation_success: true });
+                }
+              }
+              if (now - startTime > fixationTimeout) {
+                clearInterval(interval);
+                jsPsych.finishTrial({ fixation_success: false });
+              }
+            }, 50);
+            this._fixInterval = interval;
+          },
+          on_finish: function(data) {
+            removeGazeDot();
+            clearInterval(this._fixInterval);
+            if (typeof data.fixation_success === 'undefined') data.fixation_success = false;
+            if (data.fixation_success === false) {
+              badFixationCount++;
+            } else {
+              badFixationCount = 0;
+            }
+          }
+        },
+        // Image 1
+        {
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: function() {
+            const img = jsPsych.timelineVariable('image1');
+            return `<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+              <img src="${img}" style="height: ${imageHeight}px; max-height: 100vh;" />
+            </div>`;
+          },
+          choices: "NO_KEYS",
+          trial_duration: 1000,
+          on_load: addGazeDot,
+          on_finish: removeGazeDot
+        },
+        // Mask after image 1 (random mask)
+        {
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: function() {
+            const idx = Math.floor(Math.random() * maskFiles.length);
+            const maskPath = maskFiles[idx];
+            return `
+              <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                <img src="${maskPath}" style="height:${imageHeight}px; max-height:100vh;" />
+              </div>`;
+          },
+          choices: "NO_KEYS",
+          trial_duration: 500,
+          on_load: addGazeDot,
+          on_finish: removeGazeDot
+        },
+        // Fixation before image 2 (not monitored, but dot shown)
+        {
+          type: jsPsychImageKeyboardResponse,
+          stimulus: 'stimuli/fixation_cross.png',
+          stimulus_height: function() { return fixationToImageRatio * imageHeight; },
+          choices: "NO_KEYS",
+          trial_duration: 500,
+          on_load: addGazeDot,
+          on_finish: removeGazeDot
+        },
+        // Image 2
+        {
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: function() {
+            const img = jsPsych.timelineVariable('image2');
+            return `<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+              <img src="${img}" style="height: ${imageHeight}px; max-height: 100vh;" />
+            </div>`;
+          },
+          choices: "NO_KEYS",
+          trial_duration: 1000,
+          on_load: addGazeDot,
+          on_finish: removeGazeDot
+        },
+        // Mask after Image 2 (random mask)
+        {
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: function() {
+            const idx = Math.floor(Math.random() * maskFiles.length);
+            const maskPath = maskFiles[idx];
+            return `
+              <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+                <img src="${maskPath}" style="height:${imageHeight}px; max-height:100vh;" />
+              </div>`;
+          },
+          choices: "NO_KEYS",
+          trial_duration: 500,
+          on_load: addGazeDot,
+          on_finish: removeGazeDot
+        },
+        // Similarity rating (centered)
+        {
+        type: jsPsychSurveyMultiChoice,
+        questions: [
+            {
+            prompt: "",
+            name: "similarity",
+            options: ["1", "2", "3", "4", "5"],
+            required: true,
+            horizontal: true
+            }
+        ],
+        on_load: function () {
+            // Hide the red asterisk (required mark)
+            const requiredMark = document.querySelector('.jspsych-survey-multi-choice-required');
+            if (requiredMark) requiredMark.style.display = 'none';
+
+            // Add prompt above
+            const container = document.querySelector('.jspsych-content');
+            const promptText = document.createElement('div');
+            promptText.innerHTML = `
+            <p style="font-size: 20px; text-align: center;">
+                Please rate the similarity of the two images using the following scale:
+            </p>`;
+            container.insertBefore(promptText, container.firstChild);
+
+            // Center and style the question block
+            const questionWrapper = document.querySelector('.jspsych-survey-multi-choice-question');
+            if (questionWrapper) {
+            questionWrapper.style.display = 'flex';
+            questionWrapper.style.justifyContent = 'center';
+            questionWrapper.style.alignItems = 'center';
+            questionWrapper.style.gap = '28px';
+            questionWrapper.style.margin = '18px 0 20px 0';
+            }
+
+            // Add "Not at all similar" to the left of the first radio option
+            const firstOption = questionWrapper.querySelector('.jspsych-survey-multi-choice-option');
+            if (firstOption) {
+            const leftLabel = document.createElement('div');
+            leftLabel.innerText = "Not at all similar";
+            leftLabel.style.fontSize = "14px";
+            leftLabel.style.marginRight = "12px";
+            leftLabel.style.alignSelf = "center";
+            leftLabel.style.whiteSpace = "nowrap";
+            firstOption.parentNode.insertBefore(leftLabel, firstOption);
+            }
+
+            // Add "Extremely similar" to the right of the last radio option
+            const options = questionWrapper.querySelectorAll('.jspsych-survey-multi-choice-option');
+            const lastOption = options[options.length - 1];
+            if (lastOption) {
+            const rightLabel = document.createElement('div');
+            rightLabel.innerText = "Extremely similar";
+            rightLabel.style.fontSize = "14px";
+            rightLabel.style.marginLeft = "12px";
+            rightLabel.style.alignSelf = "center";
+            rightLabel.style.whiteSpace = "nowrap";
+            lastOption.parentNode.insertBefore(rightLabel, lastOption.nextSibling);
+            }
+        }
+        }
+
+      ],
+      timeline_variables: pairs,
+      randomize_order: true,
+      loop_function: function() {
+        return badFixationCount < MAX_BAD_FIXATIONS;
+      }
+    };
+  }
+
+  // ========== FINAL THANK YOU SCREEN ==========
+  const finish_exp = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <p style="font-size:32px">Thank you for participating!</p>
+      <p style="font-size:28px"><b>You may now close this window.</b></p>
+      <p style="font-size:22px">Press any key to finish.</p>
+    `
+  };
+
+  // ========== MAIN TIMELINE WITH RECALIBRATION LOOP ==========
+  const calibration_loop = {
+    timeline: [
+      calibration_instructions,
+      calibration,
+      calibration_done,
+      validation_instructions,
+      validation,
+      validation_done
+    ]
+  };
+
+  const recalibration_block = {
+    timeline: [
+      recalibrate_instructions,
+      calibration_loop
+    ]
+  };
+
+  const experiment_loop = {
+    timeline: [
+      before_exp_screen,
+      preload_mini_images,
+      getSimilarityTrialBlock(mini_pairs)
+    ],
+    loop_function: function() {
+      if (badFixationCount >= MAX_BAD_FIXATIONS) {
+        badFixationCount = 0;
+        return false;
+      }
+      return false;
+    }
+  };
+
+  const main_timeline = [
+    camera_instructions,
+    init_camera,
+    virtual_chinrest,
+    calibration_loop,
+    {
+      timeline: [
+        experiment_loop,
+        recalibration_block
+      ],
+      loop_function: function() {
+        return badFixationCount >= MAX_BAD_FIXATIONS;
+      }
+    },
+    finish_exp
+  ];
+
+  // ========== RUN IT ==========
+  jsPsych.run(main_timeline);
+</script>
+</html>

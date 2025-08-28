@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <!-- jsPsych core and plugins -->
+  <script src="../dist/jspsych.js"></script>
+  <script src="../dist/plugin-html-button-response.js"></script>
+  <script src="../dist/plugin-html-keyboard-response.js"></script>
+  <script src="../dist/plugin-webgazer-init-camera.js"></script>
+  <script src="../dist/plugin-webgazer-calibrate.js"></script>
+  <script src="../dist/plugin-virtual-chinrest.js"></script>
+  <script src="js/webgazer/webgazer.js"></script>
+  <script src="../dist/extension-webgazer.js"></script>
+  <link rel="stylesheet" href="../dist/jspsych.css" />
+  <style>
+    .jspsych-content { max-width: 100%; position: relative; }
+    table { margin: auto; border-collapse: collapse; }
+    th, td { padding: 6px 10px; border: 1px solid #888; }
+    .gaze-dot {
+      position: fixed;
+      width: 12px;
+      height: 12px;
+      background-color: red;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      left: 0;
+      top: 0;
+      /* will be set in JS */
+    }
+    .centered-fixation {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 100;
+      pointer-events: none;
+    }
+    .roi-circle {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      border: 2px solid #000;
+      border-radius: 50%;
+      background: none;
+      pointer-events: none;
+      z-index: 99;
+    }
+  </style>
+</head>
+<body></body>
+<script>
+  // ==== PARAMETERS ====
+  const calibrationPoints         = 5;
+  const calibrationReps           = 2;
+  const fixationRadiusDeg         = 2;
+  const validationLoopCount       = 20;
+  const windowMs                  = 500; // Rolling window for accuracy (ms)
+  const fixationTimeoutMs         = 10000;
+  const samplingIntervalMs        = 50;
+  const inRoiThresh               = 0.90; // 90% of gaze points in ROI required
+
+  // ==== GLOBALS ====
+  let pixelsPerDegree = null;
+  let viewingDistance = null;
+  const accuracyResults = [];
+
+  function getCalibrationPoints(n) {
+    if (n === 5)  return [[25,25],[75,25],[50,50],[25,75],[75,75]];
+    if (n === 9)  return [[20,20],[50,20],[80,20],[20,50],[50,50],[80,50],[20,80],[50,80],[80,80]];
+    if (n === 13) return [[10,10],[30,10],[50,10],[70,10],[90,10],
+                          [20,50],[40,50],[60,50],[80,50],
+                          [10,90],[30,90],[50,90],[70,90]];
+    return [[50,50]];
+  }
+
+  const jsPsych = initJsPsych({
+    extensions: [{ type: jsPsychExtensionWebgazer, params: { targets: [] } }]
+  });
+  const timeline = [];
+
+  // 1. Intro
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `<p>This experiment uses your camera for eye tracking.</p>
+               <p>You will be prompted to allow camera access next.</p>`,
+    choices: ['Begin'],
+    post_trial_gap: 500
+  });
+
+  // 2. Camera Init
+  timeline.push({ type: jsPsychWebgazerInitCamera });
+  
+  // 3. Virtual Chinrest
+  timeline.push({
+    type: jsPsychVirtualChinrest,
+    blindspot_reps: 2,
+    resize_prompt: true,
+    item_path: '../../stimuli/credit_card.png',
+    on_finish: data => {
+      pixelsPerDegree = data.px2deg || 50;
+      viewingDistance = data.view_dist_mm ?? 'NA';
+    }
+  });
+
+  // 4. Calibration
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `<p>Calibration: ${calibrationPoints} points × ${calibrationReps} reps</p>
+               <p>Click to start calibration.</p>`,
+    choices: ['Start calibration']
+  });
+  timeline.push({
+    type: jsPsychWebgazerCalibrate,
+    calibration_points: getCalibrationPoints(calibrationPoints),
+    repetitions_per_point: calibrationReps,
+    randomize_calibration_order: true
+  });
+
+  // 5. Pre-Trial Accuracy Screen (with ROI & gaze-dot perfectly centered)
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: () => {
+      const viewDistCm = viewingDistance!=='NA'
+        ? (viewingDistance/10).toFixed(1)
+        : 'NA';
+      const roiPx    = pixelsPerDegree * fixationRadiusDeg;
+      const radiusCm = viewingDistance!=='NA'
+        ? (Math.tan(fixationRadiusDeg * Math.PI/180) * viewingDistance / 10).toFixed(2)
+        : 'NA';
+      return `
+        <div>
+          <h3>Fixation ROI & Display</h3>
+          <ul>
+            <li>Viewing distance: ${viewDistCm} cm</li>
+            <li>Fixation radius: ${fixationRadiusDeg}°</li>
+            <li>ROI radius: ${roiPx.toFixed(1)} px</li>
+            <li>Radius size: ${radiusCm} cm</li>
+          </ul>
+          <p>Click to begin the fixation trials.</p>
+        </div>`;
+    },
+    choices: ['Begin Trials'],
+    on_load: () => {
+      webgazer.resume();
+      // Draw ROI at screen center using position: fixed
+      const roiPx = pixelsPerDegree * fixationRadiusDeg;
+      const roi = document.createElement('div');
+      roi.className = 'roi-circle';
+      roi.style.width = `${roiPx * 2}px`;
+      roi.style.height = `${roiPx * 2}px`;
+      roi.id = "centered-roi";
+      document.body.appendChild(roi);
+      // Draw gaze dot at top (hidden initially)
+      const dot = document.createElement('div');
+      dot.className = 'gaze-dot';
+      dot.id = "centered-gaze-dot";
+      document.body.appendChild(dot);
+
+      // Animate gaze dot
+      const interval = setInterval(() => {
+        webgazer.getCurrentPrediction().then(g => {
+          if (g?.x!=null && g?.y!=null) {
+            dot.style.left = `${g.x-6}px`;
+            dot.style.top  = `${g.y-6}px`;
+            jsPsych.data.write({
+              phase:          'accuracy-screen',
+              gaze_x:         g.x,
+              gaze_y:         g.y,
+              gaze_timestamp: performance.now()
+            });
+          }
+        });
+      }, samplingIntervalMs);
+      dot._interval = interval;
+      roi._interval = interval;
+    },
+    on_finish: () => {
+      // Remove gaze dot and ROI
+      const dot = document.getElementById('centered-gaze-dot');
+      if (dot) {
+        clearInterval(dot._interval);
+        dot.remove();
+      }
+      const roi = document.getElementById('centered-roi');
+      if (roi) {
+        clearInterval(roi._interval);
+        roi.remove();
+      }
+      // Keep tracking running
+    }
+  });
+
+  // 6. Fixation trials + rest screen (all stimuli pixel-perfect centered)
+  for (let i = 1; i <= validationLoopCount; i++) {
+    timeline.push({
+      timeline: [
+
+        // 1. Buffer screen before each trial
+        {
+          type: jsPsychHtmlButtonResponse,
+          stimulus: `<p>Trial ${i} of ${validationLoopCount}</p>
+                    <p>Click “Begin Next Trial” to continue.</p>`,
+          choices: ['Begin Next Trial']
+        },
+
+        // 2. Fixation trial
+        {
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: () => {
+            const sizePx = 2 * pixelsPerDegree * fixationRadiusDeg;
+            // Fixation cross is fixed to viewport center!
+            return `
+              <img src="../../stimuli/fixation_cross.png"
+                  class="centered-fixation"
+                  style="width:${sizePx}px; height:${sizePx}px;" />`;
+          },
+          choices: 'NO_KEYS',
+          trial_duration: fixationTimeoutMs,
+          data: { trial_id: 'fixation-adaptive', trial_number: i },
+          on_load: () => {
+            const buffer = [];
+            const cx = window.innerWidth / 2;
+            const cy = window.innerHeight / 2;
+            const roiPx = pixelsPerDegree * fixationRadiusDeg;
+            const start = performance.now();
+            let ended = false;
+
+            const interval = setInterval(async () => {
+              const now = performance.now();
+              const g = await webgazer.getCurrentPrediction();
+              if (g?.x != null && g?.y != null) {
+                buffer.push({ x: g.x, y: g.y, t: now });
+                while (buffer.length > 0 && now - buffer[0].t > windowMs) {
+                  buffer.shift();
+                }
+                const inside = buffer.filter(p => Math.hypot(p.x - cx, p.y - cy) <= roiPx).length;
+                const total = buffer.length;
+                const acc = total ? (inside / total) : 0;
+                // === LOG ROLLING ACCURACY ===
+                if (total > 3) {
+                  console.log(`Rolling 500ms accuracy: ${(acc * 100).toFixed(1)}% (${inside}/${total})`);
+                }
+                if (total > 3 && acc >= inRoiThresh) {
+                  finishTrial(true, Math.round(now - start), (acc * 100).toFixed(1));
+                  return;
+                }
+              }
+              if (!ended && now - start >= fixationTimeoutMs) {
+                const inside = buffer.filter(p => Math.hypot(p.x - cx, p.y - cy) <= roiPx).length;
+                const total = buffer.length;
+                const acc = total ? (inside / total) : 0;
+                finishTrial(false, fixationTimeoutMs, (acc * 100).toFixed(1));
+                return;
+              }
+            }, samplingIntervalMs);
+
+            function finishTrial(success, ttf, acc) {
+              if (ended) return;
+              ended = true;
+              clearInterval(interval);
+              // Remove the ROI circle
+              const roi = document.getElementById("fixation-roi-" + i);
+              if (roi) roi.remove();
+              accuracyResults.push({
+                trial:        i,
+                success:      success ? 1 : 0,
+                timeToFixate: ttf,
+                accuracy:     acc
+              });
+              jsPsych.finishTrial({
+                trial_number:  i,
+                success,
+                timeToFixate:  ttf,
+                accuracy:      acc,
+                gazeBuffer:    buffer
+              });
+            }
+          }
+        },
+
+        // 3. Buffer screen after each trial
+        {
+          type: jsPsychHtmlButtonResponse,
+          stimulus: `<p>Trial ${i} complete. Click to continue.</p>`,
+          choices: ['Continue']
+        }
+      ]
+    });
+  }
+
+  // 7. Final summary screen
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: () => {
+      const succ = accuracyResults.filter(r => r.success === 1).length;
+      const times= accuracyResults.map(r => r.timeToFixate);
+      const avgT = times.length
+        ? Math.round(times.reduce((a,b)=>a+b,0) / times.length)
+        : 'N/A';
+      const accs = accuracyResults
+        .map(r => parseFloat(r.accuracy))
+        .filter(v => !isNaN(v));
+      const avgA = accs.length
+        ? (accs.reduce((a,b)=>a+b,0) / accs.length).toFixed(1)
+        : 'N/A';
+      const viewDistCm = viewingDistance !== 'NA'
+        ? (viewingDistance/10).toFixed(1)
+        : 'NA';
+
+      let html = `
+        <h3>Fixation Performance</h3>
+        <ul>
+          <li>Successful fixations: ${succ}/${validationLoopCount}</li>
+          <li>Average time to fixate: ${avgT} ms</li>
+          <li>Average accuracy (last 500ms): ${avgA}%</li>
+          <li>Viewing distance: ${viewDistCm} cm</li>
+          <li>Fixation radius: ${fixationRadiusDeg}°</li>
+        </ul>
+        <table>
+          <tr><th>Trial</th><th>Accuracy (%)</th><th>Success</th><th>Time (ms)</th></tr>`;
+      accuracyResults.forEach(r => {
+        html += `
+          <tr>
+            <td>${r.trial}</td>
+            <td>${r.accuracy}</td>
+            <td>${r.success}</td>
+            <td>${r.timeToFixate}</td>
+          </tr>`;
+      });
+      html += `</table><p>Click to finish.</p>`;
+      return html;
+    },
+    choices: ['Finish & Save Data as CSV'],
+    on_load: () => {
+      webgazer.pause();
+    },
+    on_finish: () => {
+      // Generate header and rows for CSV
+      const headers = ['trial', 'accuracy', 'success', 'timeToFixate'];
+      const rows = accuracyResults.map(r =>
+        [r.trial, r.accuracy, r.success, r.timeToFixate].join(',')
+      );
+
+      // Combine into CSV string
+      const csvContent = [headers.join(','), ...rows].join('\n');
+
+      // Trigger file download
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.download = `fixation_summary_${timestamp}.csv`;
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    });
+
+  jsPsych.run(timeline);
+</script>
+</html>
