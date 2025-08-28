@@ -1325,9 +1325,7 @@
             <h3>${correct ? '✓ Correct!' : '✗ Incorrect'}</h3>
             <p><strong>Your answer:</strong> ${lastTrial.participant_response_same_different}</p>
             <p><strong>Correct answer:</strong> ${lastTrial.ground_truth_same_different}</p>
-            <p class="instruction-text-small" style="margin-top: 20px; color: #666;">
-              Remember: Focus on accuracy
-            </p>
+
           </div>
         `;
       },
@@ -2084,7 +2082,7 @@
   // ===== ZOOM CONTROL UTILITIES (ENABLED FOR STRICT CHECK) =====
   function getZoomLevel() {
     const ratio = window.outerWidth / window.innerWidth;
-    let zoom = Math.round(ratio * 100);
+    let zoom = Math.ceil(ratio * 100); // bias upward to offset under-reporting
     if (zoom < 10 || zoom > 500) zoom = 100; // fallback
     return zoom;
   }
